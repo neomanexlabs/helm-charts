@@ -95,16 +95,31 @@ jobs:
 
       # chart-releaser leaves its packages in .cr-release-packages; push those
       # exact files. Never run helm package a second time here.
+      # A chart whose version is already on GHCR was released by an earlier
+      # run and is skipped. A chart with a GitHub Release but no OCI copy
+      # (a run that failed between the two publishes) is pushed from the
+      # release asset, which is the same .tgz chart-releaser uploaded.
       - name: Push the released package to GHCR
         if: steps.guard.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          mkdir -p .cr-release-packages
           for chart in charts/*/; do
             name="$(helm show chart "$chart" | awk '$1 == "name:" { print $2; exit }')"
             version="$(helm show chart "$chart" | awk '$1 == "version:" { print $2; exit }')"
+            if helm show chart "${OCI_REGISTRY}/${name}" --version "$version" >/dev/null 2>&1; then
+              echo "$name $version is already on ${OCI_REGISTRY}: skipping"
+              continue
+            fi
             pkg=".cr-release-packages/${name}-${version}.tgz"
             if [ ! -f "$pkg" ]; then
-              echo "::error::$pkg not found: chart-releaser did not package ${name} ${version}"
+              echo "$pkg not packaged in this run: fetching the release asset ${name}-${version}"
+              gh release download "${name}-${version}" --pattern "${name}-${version}.tgz" --dir .cr-release-packages
+            fi
+            if [ ! -f "$pkg" ]; then
+              echo "::error::$pkg not found: no package from chart-releaser and no release asset for ${name} ${version}"
               exit 1
             fi
             echo "sha256 $(sha256sum "$pkg")"
