@@ -1,0 +1,43 @@
+# Fixture: topology spread constraints are set on all three workloads, so all
+# three StatefulSets must carry them.
+architecture: replication
+
+auth:
+  enabled: true
+  password: "fixture-password"
+  sentinel: true
+  sentinelPassword: "fixture-sentinel-password"
+
+master:
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: redis
+          app.kubernetes.io/component: master
+
+replica:
+  replicaCount: 2
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: redis
+          app.kubernetes.io/component: replica
+
+sentinel:
+  enabled: true
+  replicaCount: 3
+  quorum: 2
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: redis
+          app.kubernetes.io/component: sentinel

@@ -1,0 +1,42 @@
+# ---------------------------------------------------------------------------
+# Minimal Redis: one standalone instance.
+#
+# Good for development, CI, or any workload that can tolerate the cache going
+# away while a pod restarts. There is no replication and no automatic
+# failover here; use examples/ha-sentinel.yaml for that.
+#
+#   helm install my-redis ./charts/redis -f examples/minimal.yaml
+# ---------------------------------------------------------------------------
+
+architecture: standalone
+
+auth:
+  enabled: true
+  # Replace this before you install. Whatever you leave here is what ends up
+  # in the rendered Secret. To keep the password out of your values file
+  # entirely, create the Secret yourself and set auth.existingSecret instead.
+  password: "replace-with-your-own-password"
+  # No Sentinel in this setup, so no second password is needed.
+  sentinel: false
+
+sentinel:
+  enabled: false
+
+replica:
+  # Standalone runs the master StatefulSet only.
+  replicaCount: 0
+
+master:
+  persistence:
+    enabled: true
+    size: 1Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+metrics:
+  enabled: false

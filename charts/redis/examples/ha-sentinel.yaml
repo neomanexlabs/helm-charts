@@ -1,0 +1,63 @@
+# ---------------------------------------------------------------------------
+# Highly available Redis: one master, two replicas, three Sentinels.
+#
+# Sentinel watches the master and promotes a replica when the master stops
+# answering. The watchdog sidecar on the master pod asks Sentinel to hand the
+# role back once the original master is healthy again, so the master Service
+# keeps pointing at a pod that can accept writes.
+#
+#   helm install my-redis ./charts/redis -f examples/ha-sentinel.yaml
+# ---------------------------------------------------------------------------
+
+architecture: replication
+
+auth:
+  enabled: true
+  # Replace both passwords before you install, or create the Secret yourself
+  # and set auth.existingSecret.
+  password: "replace-with-your-own-password"
+  sentinel: true
+  sentinelPassword: "replace-with-your-own-sentinel-password"
+
+master:
+  persistence:
+    enabled: true
+    size: 8Gi
+  # Reclaims the master role after a failover has been resolved.
+  watchdog:
+    enabled: true
+    intervalSeconds: 30
+    cooldownSeconds: 60
+
+replica:
+  replicaCount: 2
+  persistence:
+    enabled: true
+    size: 8Gi
+
+sentinel:
+  enabled: true
+  replicaCount: 3
+  # A majority of the three Sentinels must agree before a failover starts.
+  quorum: 2
+  # Spread the Sentinels over separate nodes where the cluster allows it, but
+  # never block scheduling: two Sentinels on one node still beats a Sentinel
+  # that never starts.
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: redis
+          app.kubernetes.io/component: sentinel
+
+# Exports Redis metrics on port 9121 for a Prometheus scrape.
+metrics:
+  enabled: true
+
+configuration:
+  # Refuse writes while no replica is connected. A master that is cut off from
+  # every replica would otherwise accept writes that the failover discards.
+  min-replicas-to-write: 1
+  min-replicas-max-lag: 10
