@@ -18,6 +18,48 @@ entries:
           url: https://github.com/neomanexlabs/helm-charts
     apiVersion: v2
     appVersion: 1.14.48
+    created: "2026-09-05T16:24:22.355076186Z"
+    description: Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet,
+      one persistent workspace per git repository, with per-workspace config, MCP
+      servers and git sync.
+    digest: f7dd72169e8ca3fb7a96747a585e6fc7eb2e584d46c033a9f0bb88ad34647221
+    home: https://neomanex.com
+    keywords:
+    - opencode
+    - ai-coding-agent
+    - kubernetes
+    - helm
+    - statefulset
+    - mcp
+    - ai-agents
+    maintainers:
+    - name: Neomanex
+      url: https://neomanex.com/contact
+    name: opencode
+    sources:
+    - https://github.com/neomanexlabs/helm-charts
+    - https://github.com/anomalyco/opencode
+    type: application
+    urls:
+    - https://github.com/neomanexlabs/helm-charts/releases/download/opencode-1.4.4/opencode-1.4.4.tgz
+    version: 1.4.4
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: changed
+          description: Template comments use plain punctuation and explain themselves without pointing at any external document
+        - kind: added
+          description: The pull-request gate rejects em dashes and external documentation references anywhere in the chart
+      artifacthub.io/links: |
+        - name: Website
+          url: https://neomanex.com
+        - name: Contact
+          url: https://neomanex.com/contact
+        - name: Product
+          url: https://convops.app
+        - name: Source
+          url: https://github.com/neomanexlabs/helm-charts
+    apiVersion: v2
+    appVersion: 1.14.48
     created: "2026-09-05T10:19:08.822372653Z"
     description: Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet,
       one persistent workspace per git repository, with per-workspace config, MCP
@@ -219,4 +261,4 @@ entries:
     urls:
     - https://github.com/neomanexlabs/helm-charts/releases/download/redis-1.1.0/redis-1.1.0.tgz
     version: 1.1.0
-generated: "2026-09-05T15:37:04.751211437Z"
+generated: "2026-09-05T16:24:22.355096924Z"
