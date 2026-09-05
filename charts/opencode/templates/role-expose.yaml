@@ -1,5 +1,5 @@
 {{/*
-Expose Role — live-edit dev-server exposure inside the chart namespace.
+Expose Role: live-edit dev-server exposure inside the chart namespace.
 
 A script running INSIDE an OpenCode pod exposes its own in-cluster dev
 server (live-edit preview) by labelling its pod and creating a Service +
@@ -7,7 +7,7 @@ Ingress in the release namespace. This Role grants the chart ServiceAccount exac
 verbs, namespaced to the release namespace.
 
 NOTE on "patch pods (labels only)": Kubernetes RBAC cannot restrict `patch`
-to a specific field (labels) — `patch` is whole-object. The script only ever
+to a specific field (labels): `patch` is whole-object. The script only ever
 patches its own pod's metadata.labels (for the Service selector); the broader
 grant is a K8s limitation, not intent. Least-privilege is preserved by
 scoping to the release namespace and to pods/services/ingresses only.
@@ -27,28 +27,28 @@ metadata:
     {{- include "opencode.labels" . | nindent 4 }}
     app.kubernetes.io/component: rbac
 rules:
-  # Pods — read + patch (labels only, in practice; see header). The expose
+  # Pods: read + patch (labels only, in practice; see header). The expose
   # script labels its OWN pod so the dev-server Service's selector can
   # target it.
   - apiGroups: [""]
     resources:
       - pods
     verbs: ["get", "list", "watch", "patch"]
-  # Services — create/delete to expose the in-pod dev server (+ read for idempotency)
+  # Services: create/delete to expose the in-pod dev server (+ read for idempotency)
   - apiGroups: [""]
     resources:
       - services
     verbs: ["get", "list", "watch", "create", "delete"]
-  # Ingresses — create/delete the public route to the dev server
+  # Ingresses: create/delete the public route to the dev server
   - apiGroups: ["networking.k8s.io"]
     resources:
       - ingresses
     verbs: ["get", "list", "watch", "create", "delete"]
-  # Secrets — delete ONLY for live-edit teardown: cert-manager's per-session
+  # Secrets: delete ONLY for live-edit teardown: cert-manager's per-session
   # <resource>-sites-tls Secret. ingress-shim sets the Ingress as owner, so
   # deleting the Ingress normally GCs it; the delete verb is belt-and-braces
   # for teardown while the long-lived pod (and its Ingress ownerRef target)
-  # stays alive. Read NOT granted — the SA has no business reading secrets.
+  # stays alive. Read NOT granted. The SA has no business reading secrets.
   - apiGroups: [""]
     resources:
       - secrets

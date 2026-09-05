@@ -96,3 +96,21 @@ jobs:
             exit 1
           fi
           echo "identifier check clean"
+
+          # Published text uses plain punctuation only, so no em dash anywhere
+          # in the chart. The character is built with printf so this file stays
+          # free of it and can be scanned by the same rule.
+          em_dash="$(printf '\u2014')"
+          if grep -rn "$em_dash" charts/; then
+            echo "::error::em dash found in charts/ (hits above). Use a period, comma, colon or parentheses."
+            exit 1
+          fi
+          echo "punctuation check clean"
+
+          # Comments must explain themselves. A reference to a documentation
+          # tree that ships elsewhere is meaningless to a chart user.
+          if grep -rn "documentation/" charts/ --exclude=render-check.sh; then
+            echo "::error::reference to an external documentation path found in charts/ (hits above). Rewrite the comment so it stands on its own."
+            exit 1
+          fi
+          echo "internal path check clean"

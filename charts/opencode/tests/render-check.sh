@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# render-check.sh — template-level verification for the opencode chart:
+# render-check.sh: template-level verification for the opencode chart:
 # live-edit features, per-workspace tools rendering, git identity, autosave,
 # the ESO-less minimal example, and the published-content identifier check.
 #
@@ -35,6 +35,8 @@
 #      service address, deployment-specific release name or mailbox anywhere
 #      in the chart directory. The label key opencode.neomanex.com/workspace
 #      is the chart's reserved label namespace and is deliberately NOT matched.
+#      The same step also rejects em dashes (published text uses plain
+#      punctuation) and comments pointing at an external documentation tree.
 #
 # Usage: tests/render-check.sh   (from the chart root, or pass the chart dir)
 set -euo pipefail
@@ -85,7 +87,7 @@ helm template rel "$CHART_DIR" \
   || fail "defaults: port 3000 rendered without networkPolicy.additionalPorts"
 
 # --- B. fixture: every live-edit feature renders ----------------------------
-# 1. expose RBAC — assertions scoped to the Role DOCUMENT (not the whole
+# 1. expose RBAC. Assertions scoped to the Role DOCUMENT (not the whole
 #    render, where comments/other objects would satisfy a bare grep).
 ROLE_DOC="$(awk '/^kind: Role$/,/^---$/' "$TMP/live-edit.yaml")"
 printf '%s' "$ROLE_DOC" | grep -q 'name: rel-expose' \
@@ -326,3 +328,26 @@ if [ -n "$IDENT_HITS" ]; then
 fi
 
 echo "PASS: render-check (identifier check clean)"
+
+# Published text uses plain punctuation only, so no em dash anywhere in the
+# chart. The character is built with printf so this script stays free of it and
+# is scanned by the same rule as every other file.
+EM_DASH="$(printf '\u2014')"
+EM_HITS="$(grep -rn "$EM_DASH" "$CHART_DIR" || true)"
+if [ -n "$EM_HITS" ]; then
+  echo "$EM_HITS" >&2
+  fail "punctuation check: em dash present in the chart (see hits above); use a period, comma, colon or parentheses"
+fi
+
+echo "PASS: render-check (punctuation check clean)"
+
+# Comments must explain themselves. A reference to a documentation tree that
+# ships elsewhere is meaningless to a chart user. Only THIS script is excluded,
+# because it carries the pattern.
+DOCPATH_HITS="$(grep -rn "documentation/" "$CHART_DIR" --exclude=render-check.sh || true)"
+if [ -n "$DOCPATH_HITS" ]; then
+  echo "$DOCPATH_HITS" >&2
+  fail "internal path check: reference to an external documentation path present in the chart (see hits above)"
+fi
+
+echo "PASS: render-check (internal path check clean)"

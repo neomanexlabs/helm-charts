@@ -3,7 +3,7 @@ name: opencode
 description: Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet, one persistent workspace per git repository, with per-workspace config, MCP servers and git sync.
 
 type: application
-version: 1.4.2
+version: 1.4.3
 appVersion: "1.14.48"
 
 keywords:
@@ -28,9 +28,9 @@ maintainers:
 annotations:
   artifacthub.io/changes: |
     - kind: changed
-      description: The GitHub Release asset and the OCI artifact are the same package file, pushed once
+      description: Template comments use plain punctuation and explain themselves without pointing at any external document
     - kind: added
-      description: Hand-written release notes ship with every version (RELEASE_NOTES.md in the package)
+      description: The pull-request gate rejects em dashes and external documentation references anywhere in the chart
   artifacthub.io/links: |
     - name: Website
       url: https://neomanex.com

@@ -1,5 +1,5 @@
 {{/*
-Deployer Role — full CRUD inside the chart namespace.
+Deployer Role: full CRUD inside the chart namespace.
 
 Lets OpenCode agents create/manage k8s resources in their own namespace
 (deployments, services, configmaps, secrets, jobs, etc.) so a session can

@@ -81,7 +81,7 @@ WORKSPACE LABEL HELPERS
 */}}
 
 {{/*
-Workspace selector labels — selectorLabels plus a workspace discriminator.
+Workspace selector labels: selectorLabels plus a workspace discriminator.
 Expects a dict with keys: root (top-level context $) and ws (workspace entry).
 */}}
 {{- define "opencode.workspaceSelectorLabels" -}}

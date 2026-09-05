@@ -38,7 +38,7 @@ spec:
       initContainers:
         - name: git-init
           image: alpine/git:latest
-          # Init container runs as root — alpine/git has no UID 1000 user,
+          # Init container runs as root: alpine/git has no UID 1000 user,
           # and SSH requires a valid passwd entry. fsGroup ensures files
           # are group-readable by the main container (GID 1000).
           securityContext:
@@ -133,7 +133,7 @@ spec:
               # needed) rather than chown, because this container drops ALL
               # capabilities and CAP_CHOWN is therefore unavailable. This also
               # repairs any legacy 644-root files from earlier git-init runs.
-              # Failures on runtime-owned (1000) files are harmless — they are
+              # Failures on runtime-owned (1000) files are harmless. They are
               # already owner-writable.
               chmod -R g+w /workspace/{{ $ws.name }} 2>/dev/null || true
               echo "Workspace {{ $ws.name }} ready."
@@ -159,7 +159,7 @@ spec:
               value: /home/opencode
             # Server password from ESO secret (OpenCode reads this natively, and
             # enforces HTTP Basic auth when set). Skipped when server.passwordAuth
-            # is disabled — e.g. when an external gate (oauth2-proxy) fronts the
+            # is disabled, e.g. when an external gate (oauth2-proxy) fronts the
             # ingress, leaving the env unset disables OpenCode's built-in auth.
             {{- if and $.Values.externalSecrets.enabled $.Values.server.passwordAuth.enabled }}
             - name: OPENCODE_SERVER_PASSWORD
@@ -185,9 +185,9 @@ spec:
             # POETRY_HTTP_BASIC_<UPPER_SNAKE(name)>_USERNAME=__token__ and
             # _PASSWORD (from the same `gitlab-token` secret key), so a runtime
             # `poetry install` in a session resolves that source's private
-            # packages with no on-disk credential (the canonical env-var auth
-            # pattern — standards/python/02-package-management.md; `poetry config
-            # http-basic` is forbidden at runtime). Same gating as GITLAB_TOKEN.
+            # packages with no on-disk credential. Credentials stay in the
+            # environment only: writing them to disk with `poetry config
+            # http-basic` is not allowed at runtime. Same gating as GITLAB_TOKEN.
             {{- if and $.Values.externalSecrets.enabled $.Values.gitlab.enabled }}
             {{- range $src := $.Values.gitlab.poetrySources }}
             {{- $envName := upper (replace "-" "_" $src) }}
@@ -218,7 +218,7 @@ spec:
               # inside any submodule path. Acceptable scope: this is the
               # pod-local user config of a dedicated single-tenant pod.
               git config --global --add safe.directory '*'
-              # Runtime commit identity for the uid-1000 user — git-init's
+              # Runtime commit identity for the uid-1000 user. git-init's
               # identity lives in root's ephemeral HOME and never reaches the
               # runtime user; without it the first edit-loop commit fails with
               # "Please tell me who you are".
@@ -244,7 +244,7 @@ spec:
           # Liveness: TCP socket -- lightweight keep-alive.
           # Startup: longer timeout for initial provider connections.
           # ================================================================
-          # Probes use tcpSocket — HTTP endpoints require OPENCODE_SERVER_PASSWORD
+          # Probes use tcpSocket: HTTP endpoints require OPENCODE_SERVER_PASSWORD
           # auth (Basic), and K8s probes don't support custom headers.
           readinessProbe:
             tcpSocket:
@@ -317,7 +317,7 @@ spec:
   # ================================================================
   # VCT metadata is part of the StatefulSet spec, which K8s makes IMMUTABLE
   # after creation. Using opencode.labels would embed `helm.sh/chart: <chart>-<version>`
-  # and `app.kubernetes.io/version: <app>` here — both change on every bump and
+  # and `app.kubernetes.io/version: <app>` here, and both change on every bump and
   # would break helm upgrade with `Forbidden: updates to statefulset spec...`.
   # Use selectorLabels (stable: name + instance) only.
   volumeClaimTemplates:

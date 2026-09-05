@@ -1,5 +1,5 @@
 {{/*
-ClusterRoleBinding — bind the OpenCode ServiceAccount to an EXISTING
+ClusterRoleBinding: bind the OpenCode ServiceAccount to an EXISTING
 cluster-wide reader ClusterRole, named by `rbac.clusterReaderRoleName`.
 
 The chart never creates the ClusterRole: it binds to one the cluster

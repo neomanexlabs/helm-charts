@@ -30,7 +30,7 @@ data:
       "small_model": {{ $smallModel | toJson }},
       {{- end }}
       {{- /* Autonomous-operation passthrough. Each key renders only when set.
-             autoupdate is a bool — `false` is falsy in Helm `if`, so guard on
+             autoupdate is a bool, and `false` is falsy in Helm `if`, so guard on
              hasKey AND a non-nil value: an unset `autoupdate:` in values is
              present-as-nil, which must NOT render, while an explicit `false`
              must. */}}
@@ -83,7 +83,7 @@ data:
       "share": {{ $.Values.config.share | toJson }},
       {{- end }}
       {{- /* Per-workspace instruction files (OpenCode `instructions` array).
-             Rendered verbatim — use ABSOLUTE in-pod paths (this file mounts as
+             Rendered verbatim, so use ABSOLUTE in-pod paths (this file mounts as
              the GLOBAL config, so relative paths have no reliable anchor).
              This is how environment-specific procedures reach ONLY the
              workspace whose pod can execute them (e.g. a live-edit flow),

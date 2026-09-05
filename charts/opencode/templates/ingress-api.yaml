@@ -1,7 +1,7 @@
 {{/*
 Per-workspace API Ingress: optional SECOND, machine-only ingress.
 Routes a distinct host to the workspace's own OpenCode service.
-Carries NO oauth2-proxy annotations — uses nginx-level HTTP Basic auth
+Carries NO oauth2-proxy annotations. Uses nginx-level HTTP Basic auth
 (when apiIngress.basicAuth.enabled) so machine callers can authenticate.
 Each workspace can override apiIngress settings.
 */}}
