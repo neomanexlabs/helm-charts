@@ -56,14 +56,32 @@ jobs:
           fi
 
       - name: Chart render checks
-        run: bash charts/opencode/tests/render-check.sh charts/opencode
-
-      - name: Render the minimal example
         run: |
           set -euo pipefail
-          helm template t charts/opencode -f charts/opencode/examples/minimal.yaml > /tmp/minimal.yaml
-          test -s /tmp/minimal.yaml
-          grep -q 'kind: StatefulSet' /tmp/minimal.yaml
+          for chart in charts/*/; do
+            chart="${chart%/}"
+            if [ -f "$chart/tests/render-check.sh" ]; then
+              echo "::group::render checks for $chart"
+              bash "$chart/tests/render-check.sh" "$chart"
+              echo "::endgroup::"
+            else
+              echo "no render checks for $chart"
+            fi
+          done
+
+      - name: Render the examples
+        run: |
+          set -euo pipefail
+          for chart in charts/*/; do
+            chart="${chart%/}"
+            for example in "$chart"/examples/*.yaml; do
+              [ -e "$example" ] || continue
+              echo "rendering $example"
+              helm template t "$chart" -f "$example" > /tmp/example.yaml
+              test -s /tmp/example.yaml
+              grep -q 'kind: StatefulSet' /tmp/example.yaml
+            done
+          done
 
       - name: Install helm-docs
         run: |
