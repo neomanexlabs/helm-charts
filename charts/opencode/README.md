@@ -103,7 +103,7 @@ The chart labels every workspace-scoped object with `opencode.neomanex.com/works
 | gitlab.enabled | bool | `false` | Inject GITLAB_TOKEN into the agent container from the ESO secret. When true (and externalSecrets.enabled), the chart wires GITLAB_TOKEN via secretKeyRef against externalSecrets.secrets.secretName / key `gitlab-token` so a `gitlab-token` entry MUST exist under externalSecrets.secrets.data. `glab` reads GITLAB_TOKEN natively (MR creation + GitLab REST); it also authenticates private package installs. Disabled by default to keep the chart generic (no token unless a deployment opts in). |
 | gitlab.poetrySources | list | `[]` | Poetry private-registry source names this deployment's sessions need auth for. For each entry the chart renders a POETRY_HTTP_BASIC_<UPPER_SNAKE(name)>_USERNAME=__token__ / _PASSWORD (from the `gitlab-token` secret key) env pair, so a runtime `poetry install` can pull that source's private packages. Each name MUST match a pyproject `[[tool.poetry.source]]` name the sessions resolve. Only rendered when externalSecrets.enabled AND gitlab.enabled (same gating as GITLAB_TOKEN). |
 | image.pullPolicy | string | `"IfNotPresent"` | Pull policy |
-| image.repository | string | `"ghcr.io/neomanexlabs/opencode"` | Container image repository |
+| image.repository | string | `"ghcr.io/neomanexlabs/opencode"` | Container image repository (FR-6 no-bump proof comment) |
 | image.tag | string | `"1.14.48"` | Image tag (pin to a published image tag) |
 | ingress.annotations | object | `{}` | Additional annotations |
 | ingress.className | string | `"nginx"` | Ingress class name |
