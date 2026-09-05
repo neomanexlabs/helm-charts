@@ -13,6 +13,43 @@ entries:
           url: https://github.com/neomanexlabs/helm-charts
     apiVersion: v2
     appVersion: 1.14.48
+    created: "2026-09-05T10:01:26.1670606Z"
+    description: Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet,
+      one persistent workspace per git repository, with per-workspace config, MCP
+      servers and git sync.
+    digest: 13057844c5c000965a0fac27f183d998dbb14b4a62f557a719ca0ca4f6d3f738
+    home: https://neomanex.com
+    keywords:
+    - opencode
+    - ai-coding-agent
+    - kubernetes
+    - helm
+    - statefulset
+    - mcp
+    - ai-agents
+    maintainers:
+    - name: Neomanex
+      url: https://neomanex.com/contact
+    name: opencode
+    sources:
+    - https://github.com/neomanexlabs/helm-charts
+    - https://github.com/anomalyco/opencode
+    type: application
+    urls:
+    - https://github.com/neomanexlabs/helm-charts/releases/download/opencode-1.4.1/opencode-1.4.1.tgz
+    version: 1.4.1
+  - annotations:
+      artifacthub.io/links: |
+        - name: Website
+          url: https://neomanex.com
+        - name: Contact
+          url: https://neomanex.com/contact
+        - name: Product
+          url: https://convops.app
+        - name: Source
+          url: https://github.com/neomanexlabs/helm-charts
+    apiVersion: v2
+    appVersion: 1.14.48
     created: "2026-09-05T09:48:50.49208031Z"
     description: Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet,
       one persistent workspace per git repository, with per-workspace config, MCP
@@ -38,4 +75,4 @@ entries:
     urls:
     - https://github.com/neomanexlabs/helm-charts/releases/download/opencode-1.4.0/opencode-1.4.0.tgz
     version: 1.4.0
-generated: "2026-09-05T09:48:50.492087667Z"
+generated: "2026-09-05T10:01:26.167068722Z"
