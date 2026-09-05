@@ -31,10 +31,12 @@ This becomes the Service DNS name that clients connect to.
 {{- end }}
 
 {{/*
-Chart name and version for chart label.
+Chart name and version for chart label. Semver build metadata (the part after
+"+") is dropped: the label sits in the pod template, so a volatile suffix there
+would roll every pod on each render.
 */}}
 {{- define "opencode.chart" -}}
-{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{- printf "%s-%s" .Chart.Name (regexReplaceAll "\\+.*" .Chart.Version "") | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*

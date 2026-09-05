@@ -4,13 +4,13 @@ Runs the [OpenCode](https://github.com/anomalyco/opencode) AI coding agent as a 
 
 ```sh
 helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
-helm install opencode neomanexlabs/opencode --version 1.4.3 -f my-values.yaml
+helm install opencode neomanexlabs/opencode --version 1.4.4 -f my-values.yaml
 ```
 
 Or as an OCI artifact:
 
 ```sh
-helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.3 -f my-values.yaml
+helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.4 -f my-values.yaml
 ```
 
 ## Requirements
