@@ -25,7 +25,7 @@ Create a default fully qualified app name.
 Create chart name and version as used by the chart label.
 */}}
 {{- define "redis.chart" -}}
-{{- printf "%s-%s" .Chart.Name .Chart.Version | regexReplaceAll "\\+.*" "" | trunc 63 | trimSuffix "-" }}
+{{- printf "%s-%s" .Chart.Name (regexReplaceAll "\\+.*" .Chart.Version "") | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*

@@ -24,6 +24,8 @@
 #   G. an unimplemented architecture is rejected: architecture=cluster must
 #      fail the render rather than silently produce a release with no Redis
 #      in it.
+#   I. chart label: helm.sh/chart is name-version with semver build metadata
+#      stripped, so a +sha suffix never rolls the pods.
 #   H. identifier check: no private registry, private git host or company
 #      mailbox anywhere in the chart directory. The same step rejects em
 #      dashes (published text uses plain punctuation) and comments pointing
@@ -249,3 +251,23 @@ if [ -n "$DOCPATH_HITS" ]; then
 fi
 
 echo "PASS: render-check H3 (internal path check clean)"
+
+# --- I. chart label ignores semver build metadata ---------------------------
+# A version such as 1.1.0+abc123 must label the pods redis-1.1.0: the label
+# sits in the pod template, so anything volatile in it rolls every pod.
+cp -R "$CHART_DIR" "$TMP/meta"
+sed -E 's/^version: (.*)$/version: \1+abc123/' "$TMP/meta/Chart.yaml" > "$TMP/meta/Chart.yaml.new"
+mv "$TMP/meta/Chart.yaml.new" "$TMP/meta/Chart.yaml"
+grep -q '^version: .*+abc123$' "$TMP/meta/Chart.yaml" \
+  || fail "chart label: could not inject build metadata into the scratch Chart.yaml"
+helm template rel "$TMP/meta" > "$TMP/meta.yaml" 2>/dev/null \
+  || fail "chart label: render with build metadata failed"
+META_LABEL="$(grep -m1 'helm.sh/chart:' "$TMP/meta.yaml" | awk '{print $2}')"
+BASE_VERSION="$(sed -nE 's/^version: ([^+]*).*$/\1/p' "$CHART_DIR/Chart.yaml")"
+[ "$META_LABEL" = "redis-$BASE_VERSION" ] \
+  || fail "chart label: expected redis-$BASE_VERSION with build metadata stripped, got '$META_LABEL'"
+PLAIN_LABEL="$(grep -m1 'helm.sh/chart:' "$TMP/default.yaml" | awk '{print $2}')"
+[ "$PLAIN_LABEL" = "redis-$BASE_VERSION" ] \
+  || fail "chart label: expected redis-$BASE_VERSION on the default render, got '$PLAIN_LABEL'"
+
+echo "PASS: render-check I (chart label strips build metadata)"
