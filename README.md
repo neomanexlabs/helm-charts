@@ -1,5 +1,7 @@
 # Neomanex Helm Charts
 
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/neomanexlabs)](https://artifacthub.io/packages/search?repo=neomanexlabs)
+
 Public Helm charts published by [Neomanex](https://neomanex.com), an AI-native company that runs its own operations on AI agents and publishes the infrastructure underneath them. These are the charts we run in production ourselves, not demo material. Install them from the GitHub Pages chart repository or pull them as OCI artifacts from GHCR.
 
 ## Charts
