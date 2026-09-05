@@ -1,0 +1,181 @@
+{{/*
+Per-workspace ConfigMap containing opencode.json configuration.
+Provider API keys use {file:PATH} substitution -- secrets are NOT in this ConfigMap.
+They are volume-mounted from ESO-managed K8s Secrets at /etc/opencode/secrets/.
+*/}}
+{{- range $idx, $ws := .Values.workspaces }}
+{{- $fullname := include "opencode.fullname" $ }}
+{{- $wsFullname := printf "%s-%s" $fullname $ws.name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $wsFullname }}-config
+  labels:
+    {{- include "opencode.labels" $ | nindent 4 }}
+    opencode.neomanex.com/workspace: {{ $ws.name }}
+    app.kubernetes.io/component: config
+data:
+  opencode.json: |
+    {
+      {{- /* Model: per-workspace override ($ws.model / $ws.smallModel) wins,
+             else release-global config.model / config.smallModel. Empty = omit
+             and OpenCode uses its built-in default. */}}
+      {{- $model := $ws.model | default $.Values.config.model }}
+      {{- if $model }}
+      "model": {{ $model | toJson }},
+      {{- end }}
+      {{- $smallModel := $ws.smallModel | default $.Values.config.smallModel }}
+      {{- if $smallModel }}
+      "small_model": {{ $smallModel | toJson }},
+      {{- end }}
+      {{- /* Autonomous-operation passthrough. Each key renders only when set.
+             autoupdate is a bool — `false` is falsy in Helm `if`, so guard on
+             hasKey AND a non-nil value: an unset `autoupdate:` in values is
+             present-as-nil, which must NOT render, while an explicit `false`
+             must. */}}
+      {{- /* Permission map: global config.permission, plus the per-workspace
+             MCP tool exposure filter (optional global config.tools deep-copied,
+             optional $ws.tools mergeOverwrite'd on top -- workspace key wins)
+             folded in as allow/deny rules. A top-level opencode.json "tools"
+             key CANNOT express this filter next to a catch-all permission:
+             opencode (verified v1.14.48 source: config.ts merges tools-derived
+             rules BEFORE the permission block's own entries, and
+             Permission.disabled() picks the LAST matching rule) lets a
+             `"*": allow` permission defeat every tools-map deny. Folding the
+             filter into `permission` instead exploits toJson's byte-wise key
+             sort: "*" (0x2A) renders first, "srv*" globs render before
+             "srv_tool" specifics ('*' 0x2A < '_' 0x5F), so last-match resolves
+             catch-all < deny-glob < allow-specific -- whitelist semantics.
+             Builtin write/edit/patch belong in config.permission directly,
+             never in a tools map (opencode aliases them to `edit` only on its
+             own tools->permission path, which this rendering bypasses).
+             Rendered only when non-empty; deploys declaring neither
+             config.permission nor any tools map render exactly as before. */}}
+      {{- /* config.permission accepts opencode's two shapes: the string
+             shorthand ("allow") or the map form -- opencode normalizes the
+             string to {"*": <action>} at decode (config/permission.ts
+             normalizeInput, verified v1.14.48), so folding tool rules next to
+             a string catch-all is exact. A workspace with NO tools filter
+             renders config.permission VERBATIM (byte-identical to pre-1.3.x
+             renders). */}}
+      {{- $wsTools := dict }}
+      {{- if $.Values.config.tools }}{{ $wsTools = deepCopy $.Values.config.tools }}{{ end }}
+      {{- if $ws.tools }}{{ $wsTools = mustMergeOverwrite $wsTools (deepCopy $ws.tools) }}{{ end }}
+      {{- if $wsTools }}
+      {{- $perm := dict }}
+      {{- if kindIs "string" $.Values.config.permission }}
+      {{- $_ := set $perm "*" $.Values.config.permission }}
+      {{- else if $.Values.config.permission }}
+      {{- $perm = deepCopy $.Values.config.permission }}
+      {{- end }}
+      {{- range $key, $enabled := $wsTools }}
+      {{- $_ := set $perm $key (ternary "allow" "deny" $enabled) }}
+      {{- end }}
+      "permission": {{ $perm | toJson }},
+      {{- else if $.Values.config.permission }}
+      "permission": {{ $.Values.config.permission | toJson }},
+      {{- end }}
+      {{- if and (hasKey $.Values.config "autoupdate") (not (kindIs "invalid" $.Values.config.autoupdate)) }}
+      "autoupdate": {{ $.Values.config.autoupdate | toJson }},
+      {{- end }}
+      {{- if $.Values.config.share }}
+      "share": {{ $.Values.config.share | toJson }},
+      {{- end }}
+      {{- /* Per-workspace instruction files (OpenCode `instructions` array).
+             Rendered verbatim — use ABSOLUTE in-pod paths (this file mounts as
+             the GLOBAL config, so relative paths have no reliable anchor).
+             This is how environment-specific procedures reach ONLY the
+             workspace whose pod can execute them (e.g. a live-edit flow),
+             without polluting the repo-root AGENTS.md that every checkout of
+             the repo loads. */}}
+      {{- if $ws.instructions }}
+      "instructions": {{ toJson $ws.instructions }},
+      {{- end }}
+      "provider": {
+        {{- $providerList := list }}
+        {{- range $name, $provider := $.Values.config.providers }}
+        {{- $providerList = append $providerList $name }}
+        {{- end }}
+        {{- $lastIdx := sub (len $providerList) 1 }}
+        {{- range $i, $name := $providerList }}
+        {{- $provider := index $.Values.config.providers $name }}
+        {{- /* options always carries the {file:} apiKey; extra options (e.g.
+               baseURL for a custom/OpenAI- or Anthropic-compatible endpoint)
+               are merged in from provider.options without mutating values. */}}
+        {{- $opts := dict }}
+        {{- if $provider.options }}{{ $opts = deepCopy $provider.options }}{{ end }}
+        {{- /* Per-workspace provider key override ($ws.providerSecrets.<name> =
+               mounted file name). Lets each instance bill against its OWN
+               provider key (per-engine usage attribution) while the release
+               keeps one shared ESO secret carrying all key files. Absent ->
+               the release-global provider.secretKey, unchanged behavior. */}}
+        {{- $secretFile := $provider.secretKey }}
+        {{- if and $ws.providerSecrets (hasKey $ws.providerSecrets $name) }}
+        {{- $secretFile = index $ws.providerSecrets $name }}
+        {{- end }}
+        {{- $_ := set $opts "apiKey" (printf "{file:/etc/opencode/secrets/%s}" $secretFile) }}
+        {{- $fields := list }}
+        {{- /* npm + models are required for providers NOT in OpenCode's built-in
+               models.dev catalog (e.g. z.ai). Built-in providers omit both. */}}
+        {{- if $provider.npm }}{{ $fields = append $fields (printf "\"npm\": %s" (toJson $provider.npm)) }}{{ end }}
+        {{- $fields = append $fields (printf "\"options\": %s" (toJson $opts)) }}
+        {{- if $provider.models }}{{ $fields = append $fields (printf "\"models\": %s" (toJson $provider.models)) }}{{ end }}
+        "{{ $name }}": {
+          {{ join ",\n          " $fields }}
+        }{{ if lt $i $lastIdx }},{{ end }}
+        {{- end }}
+      },
+      "mcp": {
+        {{- $mcpList := list }}
+        {{- range $name, $server := $.Values.config.mcp }}
+        {{- $mcpList = append $mcpList $name }}
+        {{- end }}
+        {{- /* Merge workspace-specific MCP servers if defined */}}
+        {{- if $ws.mcp }}
+        {{- range $name, $server := $ws.mcp }}
+        {{- if not (has $name $mcpList) }}
+        {{- $mcpList = append $mcpList $name }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- $lastMcpIdx := sub (len $mcpList) 1 }}
+        {{- range $i, $name := $mcpList }}
+        {{- /* Per-workspace MCP entry takes precedence over global */}}
+        {{- $server := dict }}
+        {{- if and $ws.mcp (hasKey $ws.mcp $name) }}
+        {{- $server = index $ws.mcp $name }}
+        {{- else }}
+        {{- $server = index $.Values.config.mcp $name }}
+        {{- end }}
+        "{{ $name }}": {
+          {{- $fields := list }}
+          {{- if $server.deploy }}
+          {{- /* Deployed MCP: auto-generate URL from in-cluster Service DNS */ -}}
+          {{- $fields = append $fields "\"type\": \"remote\"" }}
+          {{- $autoUrl := printf "http://%s-mcp-%s:%v/mcp" (include "opencode.fullname" $) $name $server.deploy.port }}
+          {{- $fields = append $fields (printf "\"url\": %s" (toJson $autoUrl)) }}
+          {{- else }}
+          {{- /* Non-deployed MCP: emit type, url/command, env as-is */ -}}
+          {{- $fields = append $fields (printf "\"type\": %s" (toJson $server.type)) }}
+          {{- if eq $server.type "remote" }}
+          {{- $fields = append $fields (printf "\"url\": %s" (toJson $server.url)) }}
+          {{- else if eq $server.type "local" }}
+          {{- $fields = append $fields (printf "\"command\": %s" (toJson $server.command)) }}
+          {{- end }}
+          {{- if $server.env }}
+          {{- $fields = append $fields (printf "\"env\": %s" (toJson $server.env)) }}
+          {{- end }}
+          {{- end }}
+          {{- if $server.headers }}
+          {{- $fields = append $fields (printf "\"headers\": %s" (toJson $server.headers)) }}
+          {{- end }}
+          {{- if and (hasKey $server "enabled") (eq (toString $server.enabled) "false") }}
+          {{- $fields = append $fields "\"enabled\": false" }}
+          {{- end }}
+          {{ join ",\n          " $fields }}
+        }{{ if lt $i $lastMcpIdx }},{{ end }}
+        {{- end }}
+      }
+    }
+{{- end }}

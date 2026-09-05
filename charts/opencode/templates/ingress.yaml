@@ -1,0 +1,85 @@
+{{/*
+Per-workspace Ingress: optional external access.
+Each workspace can override ingress settings. If a workspace has no ingress.host,
+it inherits from the top-level .Values.ingress (backward compat for single-workspace).
+*/}}
+{{- range $idx, $ws := .Values.workspaces }}
+{{- $fullname := include "opencode.fullname" $ }}
+{{- $wsFullname := printf "%s-%s" $fullname $ws.name }}
+{{- /* Determine effective ingress config: per-workspace override or global fallback */}}
+{{- $wsIngress := dict }}
+{{- if $ws.ingress }}
+  {{- $wsIngress = $ws.ingress }}
+{{- end }}
+{{- $ingressHost := "" }}
+{{- if $wsIngress.host }}
+  {{- $ingressHost = $wsIngress.host }}
+{{- else if and (eq $idx 0) $.Values.ingress.enabled }}
+  {{- /* First workspace inherits global ingress for backward compat */}}
+  {{- $ingressHost = $.Values.ingress.host }}
+{{- end }}
+{{- if $ingressHost }}
+{{- /* Merge annotations: global first, then per-workspace overrides */}}
+{{- $annotations := dict }}
+{{- if $.Values.ingress.annotations }}
+  {{- $annotations = $.Values.ingress.annotations }}
+{{- end }}
+{{- if $wsIngress.annotations }}
+  {{- $annotations = merge $wsIngress.annotations $annotations }}
+{{- end }}
+{{- /* Determine TLS config */}}
+{{- $tlsEnabled := $.Values.ingress.tls.enabled }}
+{{- $tlsSecretName := "" }}
+{{- if $wsIngress.tls }}
+  {{- if hasKey $wsIngress.tls "enabled" }}
+    {{- $tlsEnabled = $wsIngress.tls.enabled }}
+  {{- end }}
+  {{- if $wsIngress.tls.secretName }}
+    {{- $tlsSecretName = $wsIngress.tls.secretName }}
+  {{- end }}
+{{- end }}
+{{- if and (not $tlsSecretName) $tlsEnabled }}
+  {{- if $.Values.ingress.tls.secretName }}
+    {{- $tlsSecretName = $.Values.ingress.tls.secretName }}
+  {{- else }}
+    {{- $tlsSecretName = printf "%s-tls" $wsFullname }}
+  {{- end }}
+{{- end }}
+{{- $className := $wsIngress.className | default $.Values.ingress.className }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $wsFullname }}
+  labels:
+    {{- include "opencode.labels" $ | nindent 4 }}
+    opencode.neomanex.com/workspace: {{ $ws.name }}
+    app.kubernetes.io/component: ingress
+  annotations:
+    {{- if $tlsEnabled }}
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    {{- end }}
+    {{- with $annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ $className }}
+  {{- if $tlsEnabled }}
+  tls:
+    - hosts:
+        - {{ $ingressHost }}
+      secretName: {{ $tlsSecretName }}
+  {{- end }}
+  rules:
+    - host: {{ $ingressHost }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $wsFullname }}
+                port:
+                  number: {{ $.Values.server.port }}
+{{- end }}
+{{- end }}

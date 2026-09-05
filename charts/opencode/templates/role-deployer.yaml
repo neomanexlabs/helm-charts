@@ -1,0 +1,88 @@
+{{/*
+Deployer Role — full CRUD inside the chart namespace.
+
+Lets OpenCode agents create/manage k8s resources in their own namespace
+(deployments, services, configmaps, secrets, jobs, etc.) so a session can
+deploy and tear down its own scratch workloads.
+
+Bound to the chart ServiceAccount via rolebinding-deployer.yaml.
+
+Toggle with `rbac.deployerRole: true` in values. Off by default.
+*/}}
+{{- if .Values.rbac.deployerRole }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "opencode.fullname" . }}-deployer
+  labels:
+    {{- include "opencode.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+rules:
+  - apiGroups: [""]
+    resources:
+      - services
+      - configmaps
+      - secrets
+      - serviceaccounts
+      - persistentvolumeclaims
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["policy"]
+    resources:
+      - poddisruptionbudgets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["external-secrets.io"]
+    resources:
+      - externalsecrets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - roles
+      - rolebindings
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources:
+      - pods
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources:
+      - resourcequotas
+      - limitranges
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources:
+      - pods/exec
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "opencode.fullname" . }}-deployer
+  labels:
+    {{- include "opencode.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "opencode.fullname" . }}-deployer
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "opencode.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

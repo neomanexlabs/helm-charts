@@ -1,0 +1,48 @@
+# Fixture for task content-os-mcp-tool-whitelist. NOT used in any deploy.
+# Exercises the per-workspace tools-filter rendering in templates/configmap.yaml:
+# global config.tools (optional) deep-copied then mergeOverwrite'd with
+# per-workspace $ws.tools (optional) -- workspace key wins per key -- and the
+# merged map folded into the rendered `permission` object as allow/deny rules
+# next to config.permission's catch-all (the top-level opencode.json "tools"
+# key is deliberately NOT used: a catch-all `"*": allow` permission defeats it,
+# see the template comment). Nothing renders when neither map nor
+# config.permission is set (backward compat, checked against the default render).
+#
+#   - config.permission uses the STRING shorthand `allow` (production shape);
+#     the fold must normalize it to the {"*": "allow"} map form
+#   - global config.tools sets a broad deny: "playwright*": false
+#   - workspace "web-app" declares its own tools map that:
+#       * ADDS a new family ("example-mcp*": false, "example-mcp_post_get": true)
+#       * OVERRIDES the global key ("playwright*": true wins over the global false)
+#   - workspace "ops" declares NO tools map -> inherits the global map as-is
+image:
+  repository: ghcr.io/neomanexlabs/opencode
+  tag: "1.14.48"
+workspaces:
+  - name: web-app
+    repo: git@example.com:org/web-app.git
+    branch: main
+    size: 10Gi
+    tools:
+      "example-mcp*": false
+      "example-mcp_post_get": true
+      "playwright*": true
+  - name: ops
+    repo: git@example.com:org/ops.git
+    branch: main
+    size: 10Gi
+config:
+  providers:
+    deepseek:
+      secretKey: deepseek-api-key
+  permission: allow
+  tools:
+    "playwright*": false
+  mcp:
+    convops:
+      type: remote
+      url: https://mcp.convops.app
+      headers:
+        Authorization: "Bearer {file:/etc/opencode/secrets/convops-mcp-token}"
+externalSecrets:
+  enabled: false

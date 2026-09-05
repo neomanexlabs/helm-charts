@@ -1,0 +1,11 @@
+# Artifact Hub repository metadata.
+# Placed at the root of the branch Artifact Hub scans (gh-pages, published by
+# chart-releaser). Filled in with repositoryID after the repository is
+# registered at https://artifacthub.io (Control panel -> Add repository).
+repositoryID: ""
+owners:
+  # Artifact Hub matches an owner by the email of a registered Artifact Hub
+  # account. No public email is published for this account, so the field is
+  # left out until the operator supplies one; ownership is claimed through the
+  # Artifact Hub control panel instead.
+  - name: daviunx

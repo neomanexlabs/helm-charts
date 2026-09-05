@@ -1,0 +1,23 @@
+{{/*
+Role granting pods/exec permission in the chart namespace.
+Required for CronJobs that use "kubectl exec" into the StatefulSet pod
+(RWO PVCs cannot be shared between StatefulSet and CronJob pods).
+*/}}
+{{- if or .Values.cronJobs.gitSync.enabled .Values.cronJobs.sessionCleanup.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "opencode.fullname" . }}-exec
+  labels:
+    {{- include "opencode.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources:
+      - pods/exec
+    verbs: ["create"]
+{{- end }}

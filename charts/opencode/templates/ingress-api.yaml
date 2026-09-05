@@ -1,0 +1,92 @@
+{{/*
+Per-workspace API Ingress: optional SECOND, machine-only ingress.
+Routes a distinct host to the workspace's own OpenCode service.
+Carries NO oauth2-proxy annotations — uses nginx-level HTTP Basic auth
+(when apiIngress.basicAuth.enabled) so machine callers can authenticate.
+Each workspace can override apiIngress settings.
+*/}}
+{{- range $idx, $ws := .Values.workspaces }}
+{{- $fullname := include "opencode.fullname" $ }}
+{{- $wsFullname := printf "%s-%s" $fullname $ws.name }}
+{{- /* Determine effective apiIngress config: per-workspace override or global fallback */}}
+{{- $wsApiIngress := dict }}
+{{- if $ws.apiIngress }}
+  {{- $wsApiIngress = $ws.apiIngress }}
+{{- end }}
+{{- $apiHost := "" }}
+{{- if $wsApiIngress.host }}
+  {{- $apiHost = $wsApiIngress.host }}
+{{- else if and (eq $idx 0) $.Values.apiIngress.enabled }}
+  {{- /* First workspace inherits global apiIngress for backward compat */}}
+  {{- $apiHost = $.Values.apiIngress.host }}
+{{- end }}
+{{- if $apiHost }}
+{{- /* Merge annotations: global first, then per-workspace overrides */}}
+{{- $annotations := dict }}
+{{- if $.Values.apiIngress.annotations }}
+  {{- $annotations = $.Values.apiIngress.annotations }}
+{{- end }}
+{{- if $wsApiIngress.annotations }}
+  {{- $annotations = merge $wsApiIngress.annotations $annotations }}
+{{- end }}
+{{- /* Determine TLS config */}}
+{{- $tlsEnabled := $.Values.apiIngress.tls.enabled }}
+{{- $tlsSecretName := "" }}
+{{- if $wsApiIngress.tls }}
+  {{- if hasKey $wsApiIngress.tls "enabled" }}
+    {{- $tlsEnabled = $wsApiIngress.tls.enabled }}
+  {{- end }}
+  {{- if $wsApiIngress.tls.secretName }}
+    {{- $tlsSecretName = $wsApiIngress.tls.secretName }}
+  {{- end }}
+{{- end }}
+{{- if and (not $tlsSecretName) $tlsEnabled }}
+  {{- if $.Values.apiIngress.tls.secretName }}
+    {{- $tlsSecretName = $.Values.apiIngress.tls.secretName }}
+  {{- else }}
+    {{- $tlsSecretName = printf "%s-api-tls" $wsFullname }}
+  {{- end }}
+{{- end }}
+{{- $className := $wsApiIngress.className | default $.Values.apiIngress.className }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $wsFullname }}-api
+  labels:
+    {{- include "opencode.labels" $ | nindent 4 }}
+    opencode.neomanex.com/workspace: {{ $ws.name }}
+    app.kubernetes.io/component: ingress-api
+  annotations:
+    {{- if $tlsEnabled }}
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    {{- end }}
+    {{- if $.Values.apiIngress.basicAuth.enabled }}
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: {{ include "opencode.apiBasicAuthSecretName" $ }}
+    nginx.ingress.kubernetes.io/auth-realm: {{ $.Values.apiIngress.basicAuth.realm | quote }}
+    {{- end }}
+    {{- with $annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ $className }}
+  {{- if $tlsEnabled }}
+  tls:
+    - hosts:
+        - {{ $apiHost }}
+      secretName: {{ $tlsSecretName }}
+  {{- end }}
+  rules:
+    - host: {{ $apiHost }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $wsFullname }}
+                port:
+                  number: {{ $.Values.server.port }}
+{{- end }}
+{{- end }}

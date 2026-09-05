@@ -1,0 +1,8 @@
+# chart-testing configuration used by .github/workflows/lint-test.yml.
+chart-dirs:
+  - charts
+target-branch: main
+# Chart.yaml declares `maintainers: [{name: Neomanex, url: ...}]`. ct's
+# maintainer check requires each maintainer to be a GitHub username, which a
+# company name is not.
+validate-maintainers: false

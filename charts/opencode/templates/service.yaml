@@ -1,0 +1,23 @@
+{{- range $idx, $ws := .Values.workspaces }}
+{{- $fullname := include "opencode.fullname" $ }}
+{{- $wsFullname := printf "%s-%s" $fullname $ws.name }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $wsFullname }}
+  labels:
+    {{- include "opencode.labels" $ | nindent 4 }}
+    opencode.neomanex.com/workspace: {{ $ws.name }}
+    app.kubernetes.io/component: service
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ $.Values.server.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "opencode.workspaceSelectorLabels" (dict "root" $ "ws" $ws) | nindent 4 }}
+    app.kubernetes.io/component: server
+{{- end }}

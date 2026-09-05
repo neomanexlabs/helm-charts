@@ -1,0 +1,28 @@
+{{/*
+Per-workspace headless service for pod-level DNS addressing.
+Enables direct pod access: <release>-<workspace>-0.<release>-<workspace>-hl.<namespace>.svc.cluster.local
+*/}}
+{{- range $idx, $ws := .Values.workspaces }}
+{{- $fullname := include "opencode.fullname" $ }}
+{{- $wsFullname := printf "%s-%s" $fullname $ws.name }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $wsFullname }}-hl
+  labels:
+    {{- include "opencode.labels" $ | nindent 4 }}
+    opencode.neomanex.com/workspace: {{ $ws.name }}
+    app.kubernetes.io/component: headless-service
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ $.Values.server.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "opencode.workspaceSelectorLabels" (dict "root" $ "ws" $ws) | nindent 4 }}
+    app.kubernetes.io/component: server
+{{- end }}

@@ -1,0 +1,29 @@
+# Minimal example: one workspace, no External Secrets Operator, no ingress.
+#
+# UNAUTHENTICATED, PORT-FORWARD ONLY, NOT FOR EXPOSURE.
+# With externalSecrets.enabled: false there is no server password and no
+# provider API keys, so the OpenCode server answers anyone who can reach it.
+# Reach it with a port-forward on a cluster you control, never through an
+# ingress or a LoadBalancer.
+#
+# Render it:
+#   helm template t charts/opencode -f charts/opencode/examples/minimal.yaml
+#
+# Installing it needs the SSH key Secret to exist first (see the chart README,
+# "Requirements"): the git-init init container mounts it unconditionally.
+
+externalSecrets:
+  enabled: false
+
+server:
+  passwordAuth:
+    enabled: false
+
+ingress:
+  enabled: false
+
+workspaces:
+  - name: demo
+    repo: https://github.com/anomalyco/opencode.git
+    branch: main
+    size: 5Gi
