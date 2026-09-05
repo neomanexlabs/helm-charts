@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Neomanex Helm Charts</title>
-<meta name="description" content="Public Helm charts published by Neomanex: the OpenCode AI coding agent on Kubernetes, one workspace per git repository.">
+<meta name="description" content="Public Helm charts published by Neomanex: the OpenCode AI coding agent on Kubernetes, and Redis with Sentinel high availability and automatic master failback.">
 <style>
   :root { color-scheme: light dark; }
   body { margin: 0 auto; padding: 2rem 1.25rem 4rem; max-width: 46rem;
@@ -38,6 +38,10 @@ chart repository index; the source lives on
   <tr>
     <td><a href="https://github.com/neomanexlabs/helm-charts/tree/main/charts/opencode">opencode</a></td>
     <td>Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet, one persistent workspace per git repository.</td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/neomanexlabs/helm-charts/tree/main/charts/redis">redis</a></td>
+    <td>Runs Redis on Kubernetes with Sentinel high availability, automatic failback of the master role and role-aware readiness.</td>
   </tr>
 </table>
 
