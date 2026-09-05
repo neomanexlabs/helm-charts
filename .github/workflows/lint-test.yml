@@ -42,8 +42,18 @@ jobs:
       - name: Set up chart-testing
         uses: helm/chart-testing-action@6ec842c01de15ebb84c8627d2744a0c2f2755c9f # v2.8.0
 
+      # On a pull request, ct runs in changed-charts mode: that is what enables
+      # its check-version-increment rule, so a chart edit without a Chart.yaml
+      # bump fails here rather than only at the release guard on main.
+      # On a push to main there is nothing to diff against, so lint everything.
       - name: ct lint
-        run: ct lint --config ct.yaml --all
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            ct lint --config ct.yaml
+          else
+            ct lint --config ct.yaml --all
+          fi
 
       - name: Chart render checks
         run: bash charts/opencode/tests/render-check.sh charts/opencode
