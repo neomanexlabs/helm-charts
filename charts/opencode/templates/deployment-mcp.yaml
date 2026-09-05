@@ -1,0 +1,78 @@
+{{/*
+Deployments for MCP servers with a `deploy` block.
+Each deployable MCP gets its own Deployment + the shared opencode-secrets
+volume mounted at /etc/opencode/secrets/ for {file:...} substitution.
+*/}}
+{{- range $name, $server := .Values.config.mcp }}
+{{- if $server.deploy }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "opencode.fullname" $ }}-mcp-{{ $name }}
+  labels:
+    {{- include "opencode.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: mcp-{{ $name }}
+spec:
+  replicas: {{ $server.deploy.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "opencode.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: mcp-{{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "opencode.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: mcp-{{ $name }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mcp-{{ $name }}
+          image: {{ $server.deploy.image }}
+          {{- if $server.deploy.command }}
+          command:
+            {{- toYaml $server.deploy.command | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $server.deploy.port }}
+              protocol: TCP
+          {{- if $server.deploy.env }}
+          env:
+            {{- range $key, $val := $server.deploy.env }}
+            - name: {{ $key }}
+              {{- if kindIs "map" $val }}
+              {{- toYaml $val | nindent 14 }}
+              {{- else }}
+              value: {{ $val | quote }}
+              {{- end }}
+            {{- end }}
+          {{- end }}
+          resources:
+            {{- toYaml $server.deploy.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          {{- if $.Values.externalSecrets.enabled }}
+          volumeMounts:
+            - name: secrets
+              mountPath: /etc/opencode/secrets
+              readOnly: true
+          {{- end }}
+      {{- if $.Values.externalSecrets.enabled }}
+      volumes:
+        - name: secrets
+          secret:
+            secretName: {{ $.Values.externalSecrets.secrets.secretName }}
+            defaultMode: 0400
+      {{- end }}
+{{- end }}
+{{- end }}

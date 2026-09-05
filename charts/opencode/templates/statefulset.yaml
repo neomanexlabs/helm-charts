@@ -1,0 +1,346 @@
+{{/*
+Per-workspace StatefulSet: each workspace entry gets its own StatefulSet
+with isolated PVCs, init container, and config.
+*/}}
+{{- range $idx, $ws := .Values.workspaces }}
+{{- $fullname := include "opencode.fullname" $ }}
+{{- $wsFullname := printf "%s-%s" $fullname $ws.name }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $wsFullname }}
+  labels:
+    {{- include "opencode.labels" $ | nindent 4 }}
+    opencode.neomanex.com/workspace: {{ $ws.name }}
+spec:
+  serviceName: {{ $wsFullname }}-hl
+  replicas: {{ $.Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "opencode.workspaceSelectorLabels" (dict "root" $ "ws" $ws) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "opencode.workspaceSelectorLabels" (dict "root" $ "ws" $ws) | nindent 8 }}
+        app.kubernetes.io/component: server
+      annotations:
+        # Force rollout on ConfigMap change
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "opencode.serviceAccountName" $ }}
+      securityContext:
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      # ================================================================
+      # INIT CONTAINER: git clone + submodule init for THIS workspace
+      # Idempotent: skips clone if .git/ already exists (PVC persists)
+      # ================================================================
+      initContainers:
+        - name: git-init
+          image: alpine/git:latest
+          # Init container runs as root — alpine/git has no UID 1000 user,
+          # and SSH requires a valid passwd entry. fsGroup ensures files
+          # are group-readable by the main container (GID 1000).
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: HOME
+              value: /root
+            - name: GIT_SSH_COMMAND
+              value: "ssh -i /tmp/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              # Create files group-writable (gid 1000 via fsGroup) so the runtime
+              # container (uid 1000) can fetch/commit/push. git-init runs as root;
+              # default umask 0022 would make .git files 644-root (group can't
+              # write) and breaks the flywheel + the agent's own git pull.
+              umask 0002
+              # Copy SSH key to writable location (secret mount is read-only)
+              mkdir -p /tmp/.ssh
+              cp /mnt/ssh-key/id_ed25519 /tmp/.ssh/id_ed25519
+              chmod 600 /tmp/.ssh/id_ed25519
+              git config --global user.name {{ $.Values.git.user.name | quote }}
+              git config --global user.email {{ $.Values.git.user.email | quote }}
+              git config --global --add safe.directory /workspace/{{ $ws.name }}
+              echo "=== Workspace: {{ $ws.name }} ==="
+              if [ ! -d "/workspace/{{ $ws.name }}/.git" ]; then
+                echo "PVC empty. Cloning {{ $ws.repo }}..."
+                # Fresh ext4 PVC may have lost+found -- clean before clone
+                rm -rf /workspace/{{ $ws.name }}/*
+                rm -rf /workspace/{{ $ws.name }}/.[!.]* 2>/dev/null || true
+                git clone -b {{ $ws.branch | default "main" }} {{ $ws.repo }} /workspace/{{ $ws.name }}
+                cd /workspace/{{ $ws.name }}
+                if ! git submodule update --init --recursive; then
+                  echo "WARNING: Some submodules failed to clone for {{ $ws.name }}."
+                fi
+              else
+                echo "PVC has repo. Pulling latest for {{ $ws.name }}..."
+                cd /workspace/{{ $ws.name }}
+                # Self-heal a fetch that was killed mid-write (spot preemption).
+                # Two kinds of debris survive such a kill and neither is ever
+                # reclaimed by git on its own:
+                #   tmp_pack_*    - partial packfile, one per interrupted fetch
+                #   0-byte object - truncated loose object; makes every future
+                #                   fetch fail, so the debris compounds
+                # Left alone they are fatal in combination: the truncated object
+                # fails the fetch, this container exits non-zero, kubelet retries
+                # it, and each retry leaks another pack-sized tmp_pack_* until the
+                # PVC is full and the repo can no longer be repaired in place.
+                # A 0-byte loose object is always corrupt (a valid one carries a
+                # zlib header), so deleting it is safe - git refetches it.
+                find .git/objects -name 'tmp_pack_*' -type f -delete 2>/dev/null || true
+                find .git/objects -type f -size 0 -delete 2>/dev/null || true
+                # NOT bare under `set -e`: a corrupt or unreachable repo must
+                # degrade to "start with current state" like the pull below it,
+                # never crashloop the pod.
+                if git fetch origin && git pull --ff-only origin {{ $ws.branch | default "main" }}; then
+                  echo "Pull succeeded for {{ $ws.name }}."
+                  {{- if dig "gitSync" "enabled" true $ws }}
+                  git submodule update --init --recursive || true
+                  {{- else }}
+                  # gitSync.enabled: false = a live-edit workspace whose submodule
+                  # checkouts are a human's work branches. A blanket update would
+                  # detach any CLEAN submodule back to the recorded gitlink on
+                  # every pod restart (spot preemption), so only submodules that
+                  # are uninitialized or already detached get pinned; one sitting
+                  # on a branch is left exactly where it is.
+                  git config --file .gitmodules --get-regexp '^submodule\..*\.path$' | while read -r _key path; do
+                    if [ -e "$path/.git" ] && git -C "$path" symbolic-ref -q HEAD >/dev/null 2>&1; then
+                      echo "Keeping $path on branch $(git -C "$path" symbolic-ref --short HEAD) (gitSync disabled)."
+                    else
+                      git submodule update --init --recursive -- "$path" || true
+                    fi
+                  done
+                  {{- end }}
+                else
+                  echo "WARNING: git pull failed for {{ $ws.name }}. Starting with current state."
+                fi
+              fi
+              # Make the whole checkout group-writable so the runtime user
+              # (uid 1000, gid 1000 via fsGroup) can fetch/commit/push. We use
+              # chmod (root owns the files git-init created → no capability
+              # needed) rather than chown, because this container drops ALL
+              # capabilities and CAP_CHOWN is therefore unavailable. This also
+              # repairs any legacy 644-root files from earlier git-init runs.
+              # Failures on runtime-owned (1000) files are harmless — they are
+              # already owner-writable.
+              chmod -R g+w /workspace/{{ $ws.name }} 2>/dev/null || true
+              echo "Workspace {{ $ws.name }} ready."
+          volumeMounts:
+            - name: ssh-key
+              mountPath: /mnt/ssh-key
+              readOnly: true
+            - name: workspace-{{ $ws.name }}
+              mountPath: /workspace/{{ $ws.name }}
+      # ================================================================
+      # MAIN CONTAINER
+      # ================================================================
+      containers:
+        - name: opencode
+          image: {{ include "opencode.workspaceImage" (dict "root" $ "ws" $ws) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml $.Values.securityContext | nindent 12 }}
+          env:
+            - name: HOME
+              value: /home/opencode
+            # Server password from ESO secret (OpenCode reads this natively, and
+            # enforces HTTP Basic auth when set). Skipped when server.passwordAuth
+            # is disabled — e.g. when an external gate (oauth2-proxy) fronts the
+            # ingress, leaving the env unset disables OpenCode's built-in auth.
+            {{- if and $.Values.externalSecrets.enabled $.Values.server.passwordAuth.enabled }}
+            - name: OPENCODE_SERVER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.externalSecrets.secrets.secretName }}
+                  key: server-password
+            {{- end }}
+            # GitLab PAT for `glab` (MR creation) + private package installs.
+            # glab reads GITLAB_TOKEN natively (no `glab auth login` needed).
+            # Gated on gitlab.enabled (same values-gated style as the server
+            # password above); the `gitlab-token` key must exist under
+            # externalSecrets.secrets.data.
+            {{- if and $.Values.externalSecrets.enabled $.Values.gitlab.enabled }}
+            - name: GITLAB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.externalSecrets.secrets.secretName }}
+                  key: gitlab-token
+            {{- end }}
+            # Per-source Poetry HTTP-Basic auth for private GitLab PyPI
+            # registries. For each name in gitlab.poetrySources render the pair
+            # POETRY_HTTP_BASIC_<UPPER_SNAKE(name)>_USERNAME=__token__ and
+            # _PASSWORD (from the same `gitlab-token` secret key), so a runtime
+            # `poetry install` in a session resolves that source's private
+            # packages with no on-disk credential (the canonical env-var auth
+            # pattern — standards/python/02-package-management.md; `poetry config
+            # http-basic` is forbidden at runtime). Same gating as GITLAB_TOKEN.
+            {{- if and $.Values.externalSecrets.enabled $.Values.gitlab.enabled }}
+            {{- range $src := $.Values.gitlab.poetrySources }}
+            {{- $envName := upper (replace "-" "_" $src) }}
+            - name: POETRY_HTTP_BASIC_{{ $envName }}_USERNAME
+              value: "__token__"
+            - name: POETRY_HTTP_BASIC_{{ $envName }}_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.externalSecrets.secrets.secretName }}
+                  key: gitlab-token
+            {{- end }}
+            {{- end }}
+            - name: GIT_SSH_COMMAND
+              value: "ssh -i /home/opencode/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+            # !! NEVER set HOSTNAME env var !!
+            # It collides with the Linux kernel hostname. The listen address
+            # is controlled via the --hostname flag in the command below.
+          command:
+            - /bin/sh
+            - -c
+            - |
+              export HOME=/home/opencode
+              # safe.directory '*' instead of only the workspace root: git-init
+              # clones as root and submodules are SEPARATE repos, so a bare
+              # /workspace/<name> entry still fails "detected dubious ownership"
+              # inside any submodule path. Acceptable scope: this is the
+              # pod-local user config of a dedicated single-tenant pod.
+              git config --global --add safe.directory '*'
+              # Runtime commit identity for the uid-1000 user — git-init's
+              # identity lives in root's ephemeral HOME and never reaches the
+              # runtime user; without it the first edit-loop commit fails with
+              # "Please tell me who you are".
+              git config --global user.name {{ $.Values.git.user.name | quote }}
+              git config --global user.email {{ $.Values.git.user.email | quote }}
+              cd /workspace/{{ $ws.name }}
+              exec opencode serve \
+                --port {{ $.Values.server.port }} \
+                --hostname {{ $.Values.server.hostname }} \
+                {{- range $.Values.server.cors }}
+                --cors {{ . | quote }} \
+                {{- end }}
+                --print-logs
+          ports:
+            - name: http
+              containerPort: {{ $.Values.server.port }}
+              protocol: TCP
+          # ================================================================
+          # PROBES
+          # Readiness: GET /provider -- verifies providers are connected.
+          # Unauthenticated providers return 200 + 0 bytes (silent fail),
+          # so we check for non-empty response via httpGet (any 2xx with body).
+          # Liveness: TCP socket -- lightweight keep-alive.
+          # Startup: longer timeout for initial provider connections.
+          # ================================================================
+          # Probes use tcpSocket — HTTP endpoints require OPENCODE_SERVER_PASSWORD
+          # auth (Basic), and K8s probes don't support custom headers.
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          resources:
+            {{- if $ws.resources }}
+            {{- toYaml $ws.resources | nindent 12 }}
+            {{- else }}
+            {{- toYaml $.Values.resources | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            # OpenCode config
+            - name: config
+              mountPath: /home/opencode/.config/opencode/opencode.json
+              subPath: opencode.json
+              readOnly: true
+            # Provider API key files (mounted from ESO secret)
+            {{- if $.Values.externalSecrets.enabled }}
+            - name: secrets
+              mountPath: /etc/opencode/secrets
+              readOnly: true
+            # SSH key for git operations
+            - name: ssh-key
+              mountPath: /home/opencode/.ssh
+              readOnly: true
+            {{- end }}
+            # Session data volume
+            - name: data
+              mountPath: /home/opencode/.local/share/opencode
+            # Workspace volume
+            - name: workspace-{{ $ws.name }}
+              mountPath: /workspace/{{ $ws.name }}
+      # ================================================================
+      # VOLUMES (non-PVC)
+      # ================================================================
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $wsFullname }}-config
+        {{- if $.Values.externalSecrets.enabled }}
+        - name: secrets
+          secret:
+            secretName: {{ $.Values.externalSecrets.secrets.secretName }}
+            defaultMode: 0400
+        - name: ssh-key
+          secret:
+            secretName: {{ $.Values.externalSecrets.sshKey.secretName }}
+            defaultMode: 0600
+        {{- end }}
+  # ================================================================
+  # VOLUME CLAIM TEMPLATES (PVCs managed by StatefulSet)
+  # ================================================================
+  # VCT metadata is part of the StatefulSet spec, which K8s makes IMMUTABLE
+  # after creation. Using opencode.labels would embed `helm.sh/chart: <chart>-<version>`
+  # and `app.kubernetes.io/version: <app>` here — both change on every bump and
+  # would break helm upgrade with `Forbidden: updates to statefulset spec...`.
+  # Use selectorLabels (stable: name + instance) only.
+  volumeClaimTemplates:
+    # Data volume for OpenCode session storage
+    - metadata:
+        name: data
+        labels:
+          {{- include "opencode.selectorLabels" $ | nindent 10 }}
+          opencode.neomanex.com/workspace: {{ $ws.name }}
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if $.Values.dataVolume.storageClass }}
+        storageClassName: {{ $.Values.dataVolume.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $.Values.dataVolume.size }}
+    # Workspace volume
+    - metadata:
+        name: workspace-{{ $ws.name }}
+        labels:
+          {{- include "opencode.selectorLabels" $ | nindent 10 }}
+          opencode.neomanex.com/workspace: {{ $ws.name }}
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if $ws.storageClass }}
+        storageClassName: {{ $ws.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $ws.size | default "10Gi" }}
+{{- end }}

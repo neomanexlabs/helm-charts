@@ -1,0 +1,41 @@
+# Fixture for the live-edit chart verification (task opencode-live-edit-preview).
+# NOT used in any deploy. Exercises the four live-edit chart features:
+#   1. rbac.exposeRole -> Role/RoleBinding <release>-expose
+#   2. networkPolicy.additionalPorts -> extra allowed ingress ports (dev server :3000)
+#   3. per-workspace gitSync.enabled: false -> workspace skipped by the git-sync CronJob
+#   4. runtime safe.directory '*' + commit identity in the StatefulSet start command
+image:
+  repository: ghcr.io/neomanexlabs/opencode
+  tag: "1.14.48"
+rbac:
+  exposeRole: true
+networkPolicy:
+  enabled: true
+  allowedNamespaces:
+    - ingress-nginx
+  additionalPorts:
+    - 3000
+cronJobs:
+  gitSync:
+    enabled: true
+    schedule: "0 */6 * * *"
+workspaces:
+  - name: ops
+    repo: git@example.com:org/ops.git
+    branch: main
+    size: 10Gi
+  - name: docs-site
+    repo: git@example.com:org/docs-site.git
+    branch: main
+    size: 10Gi
+    gitSync:
+      enabled: false
+    instructions:
+      - /workspace/docs-site/docs/live-edit.md
+config:
+  providers:
+    deepseek:
+      secretKey: deepseek-api-key
+  # String shorthand + NO tools map anywhere: the render must pass the string
+  # through VERBATIM ("permission": "allow") -- byte-identical to pre-1.3.x.
+  permission: allow

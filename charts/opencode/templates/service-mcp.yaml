@@ -1,0 +1,26 @@
+{{/*
+ClusterIP Services for MCP servers with a `deploy` block.
+Each service routes to the corresponding Deployment by component label.
+*/}}
+{{- range $name, $server := .Values.config.mcp }}
+{{- if $server.deploy }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "opencode.fullname" $ }}-mcp-{{ $name }}
+  labels:
+    {{- include "opencode.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: mcp-{{ $name }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ $server.deploy.port }}
+      targetPort: {{ $server.deploy.port }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "opencode.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: mcp-{{ $name }}
+{{- end }}
+{{- end }}

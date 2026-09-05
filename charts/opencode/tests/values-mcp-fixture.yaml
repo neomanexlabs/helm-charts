@@ -1,0 +1,89 @@
+# Fixture for Phase 01 chart verification. NOT used in any deploy.
+# Exercises all four MCP shapes the configmap emitter must handle:
+#   1. remote + Authorization bearer header
+#   2. remote + X-Api-Key header
+#   3. remote + enabled: false
+#   4. local + command + env
+image:
+  repository: ghcr.io/neomanexlabs/opencode
+  tag: "1.14.48"
+workspaces:
+  - name: ops
+    repo: git@example.com:org/ops.git
+    branch: main
+    size: 10Gi
+config:
+  providers:
+    deepseek:
+      secretKey: deepseek-api-key
+  # Autonomous-operation passthrough: exercises permission/autoupdate/share
+  # rendering in opencode.json. autoupdate: false specifically verifies the
+  # falsy-bool guard (hasKey + non-nil) does not drop an explicit false.
+  permission:
+    "*": allow
+    external_directory: allow
+    doom_loop: allow
+  autoupdate: false
+  share: disabled
+  mcp:
+    # Shape 1: remote + bearer header
+    convops:
+      type: remote
+      url: https://mcp.convops.app
+      headers:
+        Authorization: "Bearer {file:/etc/opencode/secrets/convops-mcp-token}"
+    # Shape 2: remote + X-Api-Key header
+    neoreader:
+      type: remote
+      url: https://mcp.neoreader.dev/mcp
+      headers:
+        X-Api-Key: "{file:/etc/opencode/secrets/neoreader-api-key}"
+    # Shape 3: remote + explicitly disabled
+    example-remote:
+      type: remote
+      url: https://mcp.example.com
+      enabled: false
+    # Shape 4: local with env
+    brave-search:
+      type: local
+      command: ["npx", "-y", "@brave/brave-search-mcp-server@latest", "--transport", "stdio"]
+      env:
+        BRAVE_API_KEY: "{file:/etc/opencode/secrets/brave-api-key}"
+    # Shape 5: deployed MCP (generates Deployment + Service, auto-wires URL)
+    playwright:
+      type: remote
+      deploy:
+        image: mcr.microsoft.com/playwright:v1.52.0-noble
+        command: ["npx", "@playwright/mcp@latest", "--headless", "--port", "8931"]
+        port: 8931
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 2Gi
+    # Shape 6: deployed MCP with env, mixes plain string values AND valueFrom map
+    brave-deployed:
+      type: remote
+      deploy:
+        image: node:21-alpine
+        command: ["npx", "-y", "@brave/brave-search-mcp-server"]
+        port: 8080
+        env:
+          BRAVE_MCP_TRANSPORT: "http"
+          BRAVE_MCP_PORT: "8080"
+          BRAVE_API_KEY:
+            valueFrom:
+              secretKeyRef:
+                name: opencode-secrets
+                key: brave-api-key
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+externalSecrets:
+  enabled: false

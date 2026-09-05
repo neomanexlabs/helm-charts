@@ -1,0 +1,88 @@
+# Chart pull-request gate: lint, render, docs sync, scrub.
+#
+# Runs on every pull request that touches charts/, and on main so a merge that
+# skipped review is still checked. Nothing here publishes anything.
+name: lint-test
+
+on:
+  pull_request:
+    paths:
+      - 'charts/**'
+      - '.github/workflows/lint-test.yml'
+      - 'ct.yaml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+      - '.github/workflows/lint-test.yml'
+      - 'ct.yaml'
+
+permissions: {}
+
+env:
+  HELM_DOCS_VERSION: '1.14.2'
+  HELM_DOCS_SHA256: 'a8cf72ada34fad93285ba2a452b38bdc5bd52cc9a571236244ec31022928d6cc'
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # ct compares against the target branch, so it needs full history.
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@6ec842c01de15ebb84c8627d2744a0c2f2755c9f # v2.8.0
+
+      - name: ct lint
+        run: ct lint --config ct.yaml --all
+
+      - name: Chart render checks
+        run: bash charts/opencode/tests/render-check.sh charts/opencode
+
+      - name: Render the minimal example
+        run: |
+          set -euo pipefail
+          helm template t charts/opencode -f charts/opencode/examples/minimal.yaml > /tmp/minimal.yaml
+          test -s /tmp/minimal.yaml
+          grep -q 'kind: StatefulSet' /tmp/minimal.yaml
+
+      - name: Install helm-docs
+        run: |
+          set -euo pipefail
+          url="https://github.com/norwoodj/helm-docs/releases/download/v${HELM_DOCS_VERSION}/helm-docs_${HELM_DOCS_VERSION}_Linux_x86_64.tar.gz"
+          curl -sSfL "$url" -o /tmp/helm-docs.tar.gz
+          echo "${HELM_DOCS_SHA256}  /tmp/helm-docs.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/helm-docs.tar.gz -C /tmp helm-docs
+          sudo install -m 0755 /tmp/helm-docs /usr/local/bin/helm-docs
+          helm-docs --version
+
+      - name: helm-docs is in sync with values.yaml
+        run: |
+          set -euo pipefail
+          helm-docs --chart-search-root charts
+          if ! git diff --exit-code -- charts; then
+            echo "::error::charts/*/README.md is out of date. Run 'helm-docs --chart-search-root charts' and commit the result."
+            exit 1
+          fi
+
+      - name: Scrub gate
+        run: |
+          set -euo pipefail
+          # Pattern list lives here, in the gate, not in a file the scrub could
+          # miss (open-source-publishing.md section 9). render-check.sh is the
+          # one exclusion: it carries these same literals because it runs the
+          # identical check locally.
+          if grep -rniE "neomanex-base|scale-rentals|scale-intelligence|conveyor-prod|content-os@|opencode@neomanex.com" charts/ --exclude=render-check.sh; then
+            echo "::error::internal identifiers found in charts/ (hits above)"
+            exit 1
+          fi
+          echo "scrub gate clean"

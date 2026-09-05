@@ -1,0 +1,33 @@
+{{/*
+ClusterRoleBinding — bind the OpenCode ServiceAccount to an EXISTING
+cluster-wide reader ClusterRole, named by `rbac.clusterReaderRoleName`.
+
+The chart never creates the ClusterRole: it binds to one the cluster
+already has, so scope changes stay in one place. Typical scope is read
+on pods, logs, services, configmaps, secrets, namespaces, nodes and PVCs
+across the cluster.
+
+⚠️ SECURITY: if the referenced ClusterRole grants read on `secrets`, this
+SA can read EVERY secret in EVERY namespace. Bind to a ClusterRole that
+excludes `secrets`, or use per-namespace RoleBindings, when that blast
+radius is not acceptable.
+
+Toggle with `rbac.clusterReader: true` in values. Off by default.
+*/}}
+{{- if .Values.rbac.clusterReader }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "opencode.fullname" . }}-cluster-reader
+  labels:
+    {{- include "opencode.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ required "rbac.clusterReaderRoleName is required when rbac.clusterReader is true" .Values.rbac.clusterReaderRoleName }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "opencode.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

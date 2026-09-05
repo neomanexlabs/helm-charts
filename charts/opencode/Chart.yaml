@@ -1,0 +1,37 @@
+apiVersion: v2
+name: opencode
+description: Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet, one persistent workspace per git repository, with per-workspace config, MCP servers and git sync.
+
+type: application
+version: 1.4.0
+appVersion: "1.14.48"
+
+keywords:
+  - opencode
+  - ai-coding-agent
+  - kubernetes
+  - helm
+  - statefulset
+  - mcp
+  - ai-agents
+
+home: https://neomanex.com
+
+sources:
+  - https://github.com/neomanexlabs/helm-charts
+  - https://github.com/anomalyco/opencode
+
+maintainers:
+  - name: Neomanex
+    url: https://neomanex.com/contact
+
+annotations:
+  artifacthub.io/links: |
+    - name: Website
+      url: https://neomanex.com
+    - name: Contact
+      url: https://neomanex.com/contact
+    - name: Product
+      url: https://convops.app
+    - name: Source
+      url: https://github.com/neomanexlabs/helm-charts

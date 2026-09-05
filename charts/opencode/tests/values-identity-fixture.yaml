@@ -1,0 +1,52 @@
+# Fixture for the git-identity / autosave-identity chart verification
+# (open-source scrub work). NOT used in any deploy. Exercises:
+#   1. git.user.name / git.user.email -> rendered in BOTH the git-init
+#      initContainer script and the runtime container start command, so no
+#      identity is hardcoded in the templates
+#   2. per-workspace gitSync.autosave: {enabled, paths, userName, userEmail}
+#      -> git-sync CronJob autosave block using the workspace identity
+#   3. legacy per-workspace gitSync.push: true (transitional alias, one
+#      release) -> autosave block still renders, identity falls back to
+#      git.user.*
+#   4. a workspace with neither -> no autosave block at all
+image:
+  repository: ghcr.io/example/opencode
+  tag: "1.14.48"
+git:
+  user:
+    name: "Example Bot"
+    email: "bot@example.com"
+cronJobs:
+  gitSync:
+    enabled: true
+    schedule: "0 */6 * * *"
+workspaces:
+  # autosave configured explicitly with its own identity
+  - name: autosave-ws
+    repo: git@example.com:org/autosave-ws.git
+    branch: main
+    size: 10Gi
+    gitSync:
+      autosave:
+        enabled: true
+        paths:
+          - places/
+        userName: "Autosave Bot"
+        userEmail: "autosave@example.com"
+  # legacy alias: push: true must still render an autosave block, with the
+  # identity falling back to git.user.*
+  - name: legacy-ws
+    repo: git@example.com:org/legacy-ws.git
+    branch: main
+    size: 10Gi
+    gitSync:
+      push: true
+  # no autosave at all
+  - name: plain-ws
+    repo: git@example.com:org/plain-ws.git
+    branch: main
+    size: 10Gi
+config:
+  providers:
+    deepseek:
+      secretKey: deepseek-api-key

@@ -1,0 +1,88 @@
+{{- /*
+Source template for README.md. Hand-written prose lives here; the values
+reference is generated from values.yaml comments by helm-docs.
+
+  helm-docs --chart-search-root charts
+
+CI runs `helm-docs --check` (lint-test.yml), so an edit to values.yaml or to
+this template that is not regenerated fails the pull request.
+*/ -}}
+# OpenCode Helm Chart
+
+Runs the [OpenCode](https://github.com/anomalyco/opencode) AI coding agent as a long-lived server on Kubernetes: one StatefulSet per git repository, each with its own persistent volume, its own checkout kept fresh by a git-sync CronJob, its own MCP servers declared in values, and provider API keys delivered as file-mounted secrets managed by the External Secrets Operator. It is for platform and infrastructure teams who want coding agents that live next to their clusters instead of on laptops. It is published by [Neomanex](https://neomanex.com), an AI-native company, and it is the chart we run our own agent fleet on.
+
+```sh
+helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
+helm install opencode neomanexlabs/opencode --version {{ .Version }} -f my-values.yaml
+```
+
+Or as an OCI artifact:
+
+```sh
+helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version {{ .Version }} -f my-values.yaml
+```
+
+## Requirements
+
+| Requirement | Detail |
+|-------------|--------|
+| Kubernetes | 1.25 or newer, with a default StorageClass that supports dynamic provisioning (each workspace gets a PersistentVolumeClaim) |
+| [External Secrets Operator](https://external-secrets.io) | Required for any working install. The chart delivers the git SSH key and the provider API keys through ESO, and the git-init init container mounts the SSH key secret unconditionally. See "Secrets and the ESO requirement" below |
+| Ingress controller | Optional. `ingress.enabled` and `ingressApi.enabled` are off by default; without them the service is reachable through a port-forward or from inside the cluster |
+| Container image | `ghcr.io/neomanexlabs/opencode` by default. Any image with `git`, `openssh-client` and a shell works; set `image.repository` and `image.tag` to use your own |
+
+## Quick start
+
+[`examples/minimal.yaml`](examples/minimal.yaml) is the smallest set of values that produces a complete render: one workspace pointing at a public repository, no External Secrets Operator, no ingress, no server password.
+
+```sh
+helm template opencode neomanexlabs/opencode -f examples/minimal.yaml
+```
+
+Read that render before installing anything. It is deliberately unauthenticated and is meant for inspection and for a port-forward on a cluster you control, never for exposure.
+
+### Secrets and the ESO requirement
+
+`examples/minimal.yaml` renders, but it does not install as-is. With `externalSecrets.enabled: false` the chart declares no `ssh-key` volume while the git-init init container still mounts one, so the API server rejects the StatefulSet. A real install therefore needs External Secrets Operator installed in the cluster and `externalSecrets.enabled: true`, with a `ClusterSecretStore` named `gcp-secret-manager` backing the two ExternalSecret resources the chart creates:
+
+- `externalSecrets.sshKey` becomes the `opencode-ssh-key` Secret, key `id_ed25519`, the deploy key used to clone and push every workspace repository.
+- `externalSecrets.secrets` becomes the `opencode-secrets` Secret, mounted at `/etc/opencode/secrets/` and referenced from `config.provider` through OpenCode's `{file:/etc/opencode/secrets/<key>}` substitution. It also carries `server-password` when `server.passwordAuth.enabled` is on.
+
+A secrets mode that does not depend on External Secrets Operator is not implemented yet. Open an issue if you need one.
+
+## How it works
+
+Each entry in `workspaces` becomes its own StatefulSet, Service, ConfigMap and PersistentVolumeClaim, named after the workspace. An init container clones the workspace repository into the volume on first start and repairs permissions on every restart, then the OpenCode server runs as uid 1000 with that checkout mounted at `/workspace/<name>`. A per-workspace ConfigMap renders `opencode.json`: providers, MCP servers, per-workspace instructions, and a permission map folded from the global and per-workspace `tools` filters. A git-sync CronJob keeps each checkout current and, when `gitSync.autosave` is configured, commits and pushes agent-written paths on a schedule. Optional pieces, all off by default: NetworkPolicy, ingress for the web UI and for the API, RBAC roles that let the agent deploy or expose workloads in its own namespace, a session-cleanup CronJob, and a separate MCP deployment.
+
+## Label namespace
+
+The chart labels every workspace-scoped object with `opencode.neomanex.com/workspace: <name>`, and that key is part of the StatefulSet selector. Kubernetes makes selectors immutable, so this key will not be renamed inside a major version: changing it would require deleting and recreating every StatefulSet. Treat `opencode.neomanex.com/*` as the chart's reserved label namespace and do not set those keys yourself.
+
+## Upgrading
+
+### 1.3 to 1.4
+
+| Change | Action |
+|--------|--------|
+| Git commit identity is no longer hardcoded | Set `git.user.name` and `git.user.email`. The defaults are `OpenCode` and `opencode@localhost`, which are valid but generic; set your own so agent commits are attributable |
+| `gitSync.push` is deprecated | Replace the per-workspace `gitSync.push: true` with `gitSync.autosave: {enabled: true, paths: [...], userName: ..., userEmail: ...}`. The old key is still honored for this release, falls back to `git.user.*` for identity, and is removed in the next minor |
+| `rbac.clusterReaderRoleName` is now required when cluster reading is enabled | The default is empty. With `rbac.clusterReader: true` and no name set, the render fails instead of binding a role name the chart guessed |
+| `image.repository` default changed | It now points at the public `ghcr.io/neomanexlabs/opencode`. Overlays that already pin `image.repository` are unaffected |
+
+{{ template "chart.valuesSection" . }}
+
+## Support
+
+Issues are the support channel: https://github.com/neomanexlabs/helm-charts/issues. For anything else, including security reports, use https://neomanex.com/contact.
+
+## About Neomanex
+
+Neomanex is an AI-native company. We run our own business on an AI Operating Model,
+publish the evidence, and help other companies become AI native: agents, operations,
+and the infrastructure underneath them, built and governed in production.
+
+This project is part of that work. It is the same code we run ourselves.
+
+- Website: https://neomanex.com
+- Work with us: https://neomanex.com/contact
+- Products: [ConvOps](https://convops.app) (AI-first operations) and [Gnosari](https://gnosari.com) (AI agents for your business)

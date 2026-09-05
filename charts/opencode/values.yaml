@@ -1,0 +1,499 @@
+# =============================================================================
+# OPENCODE HELM CHART - DEFAULT VALUES
+# All optional features disabled by default. Override via values files.
+# =============================================================================
+
+# -- Override chart name (used in resource names)
+nameOverride: ""
+# -- Override full release name
+fullnameOverride: ""
+
+# =============================================================================
+# IMAGE
+# =============================================================================
+image:
+  # -- Container image repository
+  repository: ghcr.io/neomanexlabs/opencode
+  # -- Image tag (pin to a published image tag)
+  tag: "1.14.48"
+  # -- Pull policy
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# GIT IDENTITY
+# =============================================================================
+# Commit identity written to the pod's global git config, in BOTH the git-init
+# initContainer (root) and the runtime container (uid 1000). Without it the
+# first commit an agent makes fails with "Please tell me who you are".
+git:
+  user:
+    # -- Git commit author name used inside the pod
+    name: "OpenCode"
+    # -- Git commit author email used inside the pod
+    email: "opencode@localhost"
+
+# =============================================================================
+# REPLICA COUNT
+# =============================================================================
+# -- Number of StatefulSet replicas (multi-replica requires external routing)
+replicaCount: 1
+
+# =============================================================================
+# SERVER
+# =============================================================================
+server:
+  # -- OpenCode server port
+  port: 4096
+  # -- Listen address (0.0.0.0 for container networking)
+  hostname: "0.0.0.0"
+  # -- OpenCode app-layer HTTP Basic auth (the OPENCODE_SERVER_PASSWORD env var).
+  # When true (default), the chart injects OPENCODE_SERVER_PASSWORD from the ESO
+  # secret and OpenCode enforces HTTP Basic auth (`opencode:<pwd>`).
+  # Set to false when an external auth gate (e.g. oauth2-proxy Google SSO at the
+  # ingress) already fronts the service. Leaving the env var unset disables
+  # OpenCode's built-in Basic auth, so the external gate becomes the sole control.
+  # Note: only takes effect when externalSecrets.enabled is also true (that is
+  # what provides the server-password secret key).
+  passwordAuth:
+    enabled: true
+  # -- Additional CORS origins for browser clients (passed as --cors flags).
+  # Required for any deployment exposing the OpenCode web UI publicly behind
+  # an ingress, because the UI's bundled JS modules are loaded with the
+  # `crossorigin` attribute and the browser enforces CORS even for same-origin
+  # module requests. Each origin must be a full URL (scheme + host).
+  # Example:
+  #   cors:
+  #     - https://opencode.example.com
+  cors: []
+
+# =============================================================================
+# GITLAB
+# =============================================================================
+gitlab:
+  # -- Inject GITLAB_TOKEN into the agent container from the ESO secret.
+  # When true (and externalSecrets.enabled), the chart wires GITLAB_TOKEN via
+  # secretKeyRef against externalSecrets.secrets.secretName / key `gitlab-token`
+  # so a `gitlab-token` entry MUST exist under externalSecrets.secrets.data.
+  # `glab` reads GITLAB_TOKEN natively (MR creation + GitLab REST); it also
+  # authenticates private package installs. Disabled by default to keep the
+  # chart generic (no token unless a deployment opts in).
+  enabled: false
+
+  # -- Poetry private-registry source names this deployment's sessions need
+  # auth for. For each entry the chart renders a
+  # POETRY_HTTP_BASIC_<UPPER_SNAKE(name)>_USERNAME=__token__ / _PASSWORD (from
+  # the `gitlab-token` secret key) env pair, so a runtime `poetry install` can
+  # pull that source's private packages. Each name MUST match a pyproject
+  # `[[tool.poetry.source]]` name the sessions resolve. Only rendered when
+  # externalSecrets.enabled AND gitlab.enabled (same gating as GITLAB_TOKEN).
+  poetrySources: []
+
+# =============================================================================
+# WORKSPACES
+# =============================================================================
+# List of git repositories. Each entry creates its own StatefulSet, Services,
+# Ingress, ConfigMap, and CronJobs for full per-workspace isolation.
+#
+# Required fields:
+#   name:   Workspace identifier (used in resource names)
+#   repo:   Git SSH URL
+#   branch: Git branch (default: main)
+#   size:   PVC size for workspace volume (default: 10Gi)
+#
+# Optional per-workspace overrides (fall back to top-level values):
+#   image:
+#     tag: "1.14.48"           # Override image tag for this workspace
+#   resources: {}              # Override container resources
+#   ingress:
+#     host: ws.example.com     # Per-workspace ingress host
+#     className: nginx         # Override ingress class
+#     annotations: {}          # Merged with global ingress.annotations
+#     tls:
+#       enabled: true
+#       secretName: ws-tls
+#   apiIngress: {}             # Same structure as ingress, for machine-only access
+#   mcp: {}                    # Additional MCP servers (merged with global config.mcp)
+#   storageClass: ""           # Override storage class for workspace PVC
+#   gitSync:
+#     enabled: false           # Skip this workspace in the git-sync CronJob
+#                              # (e.g. a live-edit workspace whose checkout the
+#                              # periodic --force submodule update must never touch)
+#     autosave:                # Commit + push dirty paths from the git-sync
+#                              # CronJob (backstop for files an agent writes
+#                              # between its own commits). Off by default.
+#       enabled: false
+#       paths: []              # Paths handed to `git add`, e.g. ["places/"]
+#       userName: ""           # Commit author name  (default: git.user.name)
+#       userEmail: ""          # Commit author email (default: git.user.email)
+#                              # DEPRECATED alias: gitSync.push: true behaves as
+#                              # autosave.enabled with paths ["places/"] and the
+#                              # git.user.* identity. Removed in chart 1.5.0.
+#   instructions: []           # Extra instruction files loaded ONLY by this
+#                              # workspace's sessions (OpenCode `instructions`
+#                              # array). ABSOLUTE in-pod paths; the config is
+#                              # the global opencode.json, relative paths have
+#                              # no anchor. For environment-specific procedures
+#                              # that must not live in the repo's AGENTS.md.
+#   tools: {}                  # Per-workspace MCP tool exposure glob map, merged
+#                              # over global config.tools (workspace key wins per
+#                              # key). See config.tools below for the format.
+#
+# Example:
+#   workspaces:
+#     - name: myrepo
+#       repo: git@gitlab.com:org/myrepo.git
+#       branch: main
+#       size: 10Gi
+#       image:
+#         tag: "1.17.6"
+#       model: kimi-for-coding/k3       # optional per-workspace default model
+#       smallModel: deepseek/deepseek-v4-flash  # optional (falls back to global)
+#       ingress:
+#         host: myrepo.example.com
+#         tls:
+#           secretName: myrepo-tls
+workspaces: []
+
+# =============================================================================
+# DATA VOLUME
+# =============================================================================
+dataVolume:
+  # -- Size of the OpenCode session data volume (~/.local/share/opencode/)
+  size: 2Gi
+  # -- Storage class (empty = cluster default)
+  storageClass: ""
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+config:
+  # -- Provider API key configuration.
+  # Each entry becomes a provider block in opencode.json. The apiKey is always
+  # rendered as a {file:} substitution against /etc/opencode/secrets/<secretKey>.
+  #
+  # Built-in providers (resolved from OpenCode's models.dev catalog) need only
+  # secretKey:
+  #   providers:
+  #     anthropic:
+  #       secretKey: anthropic-api-key
+  #     deepseek:
+  #       secretKey: deepseek-api-key
+  #
+  # Custom providers NOT in models.dev (e.g. z.ai) additionally need npm,
+  # options.baseURL, and an explicit models map:
+  #   providers:
+  #     zai:
+  #       secretKey: zai-api-key
+  #       npm: "@ai-sdk/anthropic"          # or @ai-sdk/openai-compatible
+  #       options:
+  #         baseURL: https://api.z.ai/api/anthropic
+  #       models:
+  #         glm-4.6:
+  #           name: GLM-4.6
+  providers: {}
+
+  # -- Default model in "provider/model" format (e.g., "deepseek/deepseek-chat").
+  # If empty, OpenCode uses its built-in default (anthropic/claude-sonnet-4-6).
+  model: ""
+  # -- Model for lightweight tasks (titles, summaries, compaction).
+  # Same format as model. If empty, inherits from model or built-in default.
+  smallModel: ""
+
+  # -- Permission policy for autonomous / headless operation.
+  # Rendered as the `permission` object in opencode.json. Object form is
+  # required: a global `"allow"` string still leaves `doom_loop` and
+  # `external_directory` at `"ask"`, which blocks forever in a headless pod.
+  # Empty ({}) renders nothing: OpenCode falls back to its built-in defaults.
+  # Example (fully autonomous):
+  #   permission:
+  #     "*": allow
+  #     external_directory: allow
+  #     doom_loop: allow
+  # Default is null (NOT `{}`): opencode also accepts the string shorthand
+  # (`permission: allow`), and a map default makes helm's coalesce warn
+  # "cannot overwrite table with non table" on every render against a
+  # string-form values file.
+  permission: null
+
+  # -- Disable OpenCode's self-update check. Omit (null) to use the built-in
+  # default. Set to false for pinned-image deployments. Note: `false` is a
+  # valid, intentional value: the chart guards on key presence, not truthiness.
+  # autoupdate: false
+  autoupdate:
+
+  # -- Session share mode for opencode.json (e.g., "disabled", "manual", "auto").
+  # Omit (empty) to use the built-in default. "disabled" suits headless deploys.
+  # share: disabled
+  share:
+
+  # -- MCP server configuration.
+  # Each key under `mcp` becomes a server name in opencode.json.
+  # Use kebab-case server names: OpenCode converts spaces to underscores
+  # in tool names, which complicates per-message tool filtering.
+  #
+  # Schema (matches OpenCode's opencode.json config shape):
+  #   type:    "remote" | "local"             (required)
+  #   url:     "https://..."                  (required when type=remote, without deploy)
+  #   command: ["npx", "-y", "@foo/mcp"]      (required when type=local)
+  #   headers: { Authorization: "...", ... }  (optional; rendered as JSON object)
+  #   env:     { BRAVE_API_KEY: "...", ... }  (optional, local only; rendered as JSON object)
+  #   enabled: false                          (optional; omit for default=enabled)
+  #
+  # Deployable MCP servers:
+  # Adding a `deploy` block causes the chart to create a Deployment + ClusterIP
+  # Service for the MCP server, and auto-wire its URL in opencode.json.
+  # The `opencode-secrets` K8s Secret is mounted at /etc/opencode/secrets/ in
+  # deployed MCP pods so {file:...} substitution in command args works.
+  #
+  #   deploy:
+  #     image:     "node:21-alpine"                (required; container image)
+  #     command:   ["npx", "-y", "@foo/mcp"]       (required; entrypoint array)
+  #     port:      8080                            (required; container + service port)
+  #     resources:                                 (required; requests/limits)
+  #       requests: { cpu: 50m, memory: 128Mi }
+  #       limits:   { cpu: 500m, memory: 512Mi }
+  #     env:       { KEY: "value", ... }           (optional; env vars for the container)
+  #     replicas:  1                               (optional; default 1)
+  #
+  # Secret substitution: OpenCode resolves `{file:/etc/opencode/secrets/<key>}`
+  # at runtime by reading the file. The chart emits this literal string verbatim;
+  # plaintext token bytes live in the K8s Secret `opencode-secrets` (mounted at
+  # /etc/opencode/secrets/<key>), populated by ESO from GCP Secret Manager.
+  #
+  # Example (non-deployed remote):
+  #   mcp:
+  #     my-service:
+  #       type: remote
+  #       url: https://mcp.example.com
+  #       headers:
+  #         Authorization: "Bearer {file:/etc/opencode/secrets/my-service-token}"
+  #
+  # Example (deployed):
+  #   mcp:
+  #     brave-search:
+  #       type: remote
+  #       deploy:
+  #         image: node:21-alpine
+  #         command: ["npx", "-y", "@brave/brave-search-mcp-server", "--port", "8080"]
+  #         port: 8080
+  #         resources:
+  #           requests: { cpu: 50m, memory: 128Mi }
+  #           limits:   { cpu: 500m, memory: 512Mi }
+  mcp: {}
+
+  # -- Global MCP tool exposure glob map. Keys are "<server>_<tool>" (exact)
+  # or "<server>*" (glob), values are bool; a specific key beats a broader
+  # glob on the same server (e.g. {"rally-dev*": false,
+  # "rally-dev_post_get": true} exposes only post_get from rally-dev).
+  # Filters which MCP tool schemas reach the model, the mechanism behind
+  # per-workspace token-cost control. Merged with each workspace's own
+  # `tools` map (workspace key wins per key, see the `workspaces` example).
+  # NOT rendered as opencode.json's own "tools" key: opencode lets a
+  # catch-all `permission: {"*": allow}` defeat a tools-map deny (last
+  # matching rule wins and the catch-all sorts after), so the chart folds
+  # these entries into the rendered `permission` object as allow/deny rules
+  # instead. Byte-wise JSON key order ("*" < "srv*" < "srv_tool") makes
+  # last-match resolve catch-all < deny-glob < allow-specific. Nothing is
+  # rendered when neither this map nor any workspace's map nor
+  # config.permission is set (today's behavior: every connected server
+  # exposes all its tools). Builtin write/edit/patch belong in
+  # config.permission directly, never here.
+  # Example:
+  #   tools:
+  #     "playwright*": false
+  tools: {}
+
+# =============================================================================
+# EXTERNAL SECRETS (ESO v1)
+# =============================================================================
+externalSecrets:
+  # -- Enable ExternalSecret resources
+  enabled: false
+  # -- Refresh interval for secret sync from GCP
+  refreshInterval: 6h
+
+  # -- Main secrets (provider API keys + server password)
+  secrets:
+    secretName: opencode-secrets
+    # -- Map of secretKey -> GCP Secret Manager key
+    # Example:
+    #   data:
+    #     server-password:
+    #       key: opencode-server-password
+    #     anthropic-api-key:
+    #       key: opencode-anthropic-api-key
+    data: {}
+
+  # -- SSH key (file mount for git operations)
+  sshKey:
+    secretName: opencode-ssh-key
+    # Example:
+    #   data:
+    #     id_ed25519:
+    #       key: opencode-ssh-private-key
+    data: {}
+
+# =============================================================================
+# NETWORK POLICY
+# =============================================================================
+networkPolicy:
+  # -- Enable NetworkPolicy restricting ingress
+  enabled: false
+  # -- Namespaces allowed to reach OpenCode pods
+  # Example: [my-app-prod, my-app-sessions]
+  allowedNamespaces: []
+  # -- Extra ingress ports allowed in addition to server.port (e.g. [3000] for
+  # a live-edit dev server running inside the pod).
+  additionalPorts: []
+
+# =============================================================================
+# INGRESS
+# =============================================================================
+ingress:
+  # -- Enable Ingress resource (disabled by default -- internal-only service)
+  enabled: false
+  # -- Ingress class name
+  className: nginx
+  # -- Additional annotations
+  annotations: {}
+  # -- Hostname for ingress
+  host: ""
+  # -- TLS configuration
+  tls:
+    enabled: false
+    secretName: ""
+
+# =============================================================================
+# API INGRESS  (optional second, machine-only ingress)
+# =============================================================================
+# A SECOND Ingress for the SAME OpenCode service, on a distinct host, intended
+# for machine-to-machine callers (e.g. a CI job or an orchestration backend)
+# that cannot pass an interactive SSO gate. Disabled by default -> renders nothing,
+# so existing single-ingress consumers are completely unaffected.
+#
+# Typical use: the main `ingress` host is fronted by oauth2-proxy Google SSO
+# (good for humans, blocks machines with a 302). This `apiIngress` host carries
+# NO oauth2-proxy annotations and instead uses nginx-level HTTP Basic auth so a
+# machine client can authenticate with a username/password.
+apiIngress:
+  # -- Enable the second (machine-only) Ingress
+  enabled: false
+  # -- Ingress class name
+  className: nginx
+  # -- Additional annotations (merged after auto-injected cert-manager + basic-auth)
+  annotations: {}
+  # -- Hostname for the machine-only ingress
+  host: ""
+  # -- TLS configuration. When tls.enabled, the chart auto-injects the
+  # cert-manager.io/cluster-issuer annotation (same pattern as `ingress`).
+  tls:
+    enabled: false
+    secretName: ""
+  # -- nginx-level HTTP Basic auth for this host.
+  basicAuth:
+    # -- Enable nginx basic-auth annotations on the api ingress.
+    enabled: false
+    # -- Basic-auth username (the htpasswd entry user).
+    username: opencode
+    # -- Realm shown in the WWW-Authenticate challenge.
+    realm: "OpenCode API"
+    # -- Key inside externalSecrets.secrets.data whose GCP Secret Manager value
+    # holds the plaintext basic-auth password. The chart reuses the SAME remote
+    # GCP secret already mapped here to render an nginx htpasswd secret via ESO
+    # (no separate GCP secret, no out-of-band htpasswd). Must reference an
+    # existing entry under externalSecrets.secrets.data.
+    secretKey: server-password
+    # -- Name of the K8s Secret holding the rendered htpasswd (key `auth`).
+    # Defaults to "<fullname>-api-basic-auth" when empty.
+    secretName: ""
+
+# =============================================================================
+# CRONJOBS
+# =============================================================================
+cronJobs:
+  gitSync:
+    # -- Enable periodic git pull CronJob
+    enabled: false
+    # -- Cron schedule (default: every 6 hours)
+    schedule: "0 */6 * * *"
+    # -- kubectl image for exec
+    image: bitnami/kubectl:latest
+
+  sessionCleanup:
+    # -- Enable session cleanup CronJob
+    enabled: false
+    # -- Cron schedule (default: daily at 3am)
+    schedule: "0 3 * * *"
+    # -- kubectl image for exec
+    image: bitnami/kubectl:latest
+    # -- Delete session files older than this many days
+    retentionDays: 7
+
+# =============================================================================
+# SERVICE ACCOUNT
+# =============================================================================
+serviceAccount:
+  # -- Create a ServiceAccount (needed for CronJob kubectl exec)
+  create: true
+  # -- ServiceAccount name override
+  name: ""
+  # -- Annotations (e.g., for GCP Workload Identity)
+  annotations: {}
+
+# =============================================================================
+# RBAC (in addition to the always-on exec Role used by CronJobs)
+# =============================================================================
+# Optional extra RBAC for the OpenCode ServiceAccount:
+# - Namespace-scoped CRUD on services/configmaps/secrets/deployments/jobs/etc.
+# - Cluster-wide READ on pods/services/secrets/etc. via an EXISTING ClusterRole.
+#
+# ⚠️ clusterReader includes cluster-wide read of `secrets`. Leave off unless
+# the agent genuinely needs to read cluster state outside its namespace.
+rbac:
+  # -- Create a namespace-scoped deployer Role (full CRUD in the release namespace)
+  deployerRole: false
+  # -- Create a namespace-scoped expose Role:
+  # pods get/list/watch/patch + services/ingresses get/list/watch/create/delete.
+  # Lets a script inside the pod expose its own live-edit dev server (label its
+  # pod, create the Service + Ingress). Off by default.
+  exposeRole: false
+  # -- Bind the SA to an existing cluster-wide reader ClusterRole
+  clusterReader: false
+  # -- Name of the EXISTING cluster-wide reader ClusterRole to bind to.
+  #    No default: the chart fails to render when clusterReader is true and this
+  #    is empty, so nobody silently binds to a role that does not exist.
+  clusterReaderRoleName: ""
+
+# =============================================================================
+# RESOURCES
+# =============================================================================
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+
+# =============================================================================
+# SECURITY CONTEXT
+# =============================================================================
+# -- Pod-level security context
+podSecurityContext:
+  # runAsNonRoot omitted at pod level: init container (alpine/git) needs root
+  # because SSH requires a valid passwd entry. Main container enforces non-root.
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Container-level security context (main container only, init overrides its own)
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
