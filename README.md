@@ -1,12 +1,14 @@
 # Neomanex Helm Charts
 
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/neomanexlabs)](https://artifacthub.io/packages/search?repo=neomanexlabs)
+
 Public Helm charts published by [Neomanex](https://neomanex.com), an AI-native company that runs its own operations on AI agents and publishes the infrastructure underneath them. These are the charts we run in production ourselves, not demo material. Install them from the GitHub Pages chart repository or pull them as OCI artifacts from GHCR.
 
 ## Charts
 
 | Chart | Version | Description |
 |-------|---------|-------------|
-| [opencode](charts/opencode) | 1.4.3 | Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet, one persistent workspace per git repository. |
+| [opencode](charts/opencode) | 1.4.4 | Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet, one persistent workspace per git repository. |
 | [redis](charts/redis) | 1.1.0 | Runs Redis on Kubernetes with Sentinel high availability, automatic failback of the master role and role-aware readiness. |
 
 ## Install
@@ -16,13 +18,13 @@ From the chart repository:
 ```sh
 helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
 helm repo update
-helm install opencode neomanexlabs/opencode --version 1.4.3
+helm install opencode neomanexlabs/opencode --version 1.4.4
 ```
 
 Or directly from the OCI registry:
 
 ```sh
-helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.3
+helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.4
 ```
 
 Both install paths serve the identical package, built once per release.

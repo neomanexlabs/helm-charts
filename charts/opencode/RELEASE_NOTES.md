@@ -1,3 +1,14 @@
+## opencode 1.4.4
+
+**What changed**
+
+- The `helm.sh/chart` label drops semver build metadata instead of rewriting it. A chart version such as `1.4.4+abc123` labels every object `opencode-1.4.4`.
+- `tests/render-check.sh` asserts the label on a render with build metadata injected and on the default render.
+
+**Why**
+
+The label sits in the pod template. A suffix that changes per build would restart every workspace on each render even when nothing else moved.
+
 ## opencode 1.4.3
 
 **What changed**
