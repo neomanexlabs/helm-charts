@@ -12,7 +12,7 @@ fullnameOverride: ""
 # IMAGE
 # =============================================================================
 image:
-  # -- Container image repository
+  # -- Container image repository (FR-6 no-bump proof comment)
   repository: ghcr.io/neomanexlabs/opencode
   # -- Image tag (pin to a published image tag)
   tag: "1.14.48"
