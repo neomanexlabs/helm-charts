@@ -1,0 +1,19 @@
+{{- if and .Values.master.podDisruptionBudget.enabled (or (eq .Values.architecture "standalone") (eq .Values.architecture "replication")) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "redis.master.statefulsetName" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels: {{- include "redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: master
+spec:
+  {{- if .Values.master.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.master.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  {{- if .Values.master.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.master.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "redis.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: master
+{{- end }}

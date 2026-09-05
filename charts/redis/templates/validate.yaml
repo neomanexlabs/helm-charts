@@ -1,0 +1,7 @@
+{{- /*
+Values validation. This file renders nothing: it exists so the validation runs
+on every render, including one that produces no Redis workload at all (an
+unsupported architecture, for example), which a check inside a conditional
+template would miss.
+*/ -}}
+{{- include "redis.validateValues" . -}}

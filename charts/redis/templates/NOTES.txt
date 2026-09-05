@@ -1,0 +1,132 @@
+** Please be patient while the chart is being deployed **
+
+Redis can be accessed on the following DNS names from within your cluster:
+
+{{- if eq .Values.architecture "standalone" }}
+    {{ include "redis.master.serviceName" . }}.{{ .Release.Namespace }}.svc.cluster.local for read/write operations (port {{ .Values.master.service.port }})
+{{- else if eq .Values.architecture "replication" }}
+    {{ include "redis.master.serviceName" . }}.{{ .Release.Namespace }}.svc.cluster.local for read/write operations (port {{ .Values.master.service.port }})
+    {{ include "redis.replica.serviceName" . }}.{{ .Release.Namespace }}.svc.cluster.local for read-only operations (port {{ .Values.replica.service.port }})
+{{- end }}
+
+{{- if (include "redis.auth.enabled" .) }}
+
+To get your password run:
+
+    export REDIS_PASSWORD=$(kubectl get secret --namespace {{ .Release.Namespace }} {{ include "redis.secretName" . }} -o jsonpath="{.data.{{ include "redis.secretPasswordKey" . }}}" | base64 -d)
+
+{{- end }}
+
+To connect to your Redis server:
+
+1. Run a Redis pod that you can use as a client:
+
+{{- if (include "redis.auth.enabled" .) }}
+
+    kubectl run --namespace {{ .Release.Namespace }} redis-client --restart='Never' --env REDIS_PASSWORD=$REDIS_PASSWORD --image {{ include "redis.image" . }} --command -- sleep infinity
+{{- else }}
+
+    kubectl run --namespace {{ .Release.Namespace }} redis-client --restart='Never' --image {{ include "redis.image" . }} --command -- sleep infinity
+{{- end }}
+
+2. Connect using the Redis CLI:
+
+{{- if eq .Values.architecture "standalone" }}
+{{- if (include "redis.auth.enabled" .) }}
+
+    kubectl exec --tty -i redis-client --namespace {{ .Release.Namespace }} -- redis-cli -h {{ include "redis.master.serviceName" . }} -a $REDIS_PASSWORD
+{{- else }}
+
+    kubectl exec --tty -i redis-client --namespace {{ .Release.Namespace }} -- redis-cli -h {{ include "redis.master.serviceName" . }}
+{{- end }}
+{{- else if eq .Values.architecture "replication" }}
+{{- if (include "redis.auth.enabled" .) }}
+
+    # Connect to master (read/write):
+    kubectl exec --tty -i redis-client --namespace {{ .Release.Namespace }} -- redis-cli -h {{ include "redis.master.serviceName" . }} -a $REDIS_PASSWORD
+
+    # Connect to replicas (read-only):
+    kubectl exec --tty -i redis-client --namespace {{ .Release.Namespace }} -- redis-cli -h {{ include "redis.replica.serviceName" . }} -a $REDIS_PASSWORD
+{{- else }}
+
+    # Connect to master (read/write):
+    kubectl exec --tty -i redis-client --namespace {{ .Release.Namespace }} -- redis-cli -h {{ include "redis.master.serviceName" . }}
+
+    # Connect to replicas (read-only):
+    kubectl exec --tty -i redis-client --namespace {{ .Release.Namespace }} -- redis-cli -h {{ include "redis.replica.serviceName" . }}
+{{- end }}
+{{- end }}
+
+{{- if .Values.sentinel.enabled }}
+
+To connect to your Redis Sentinel:
+
+    kubectl exec --tty -i redis-client --namespace {{ .Release.Namespace }} -- redis-cli -h {{ include "redis.sentinel.serviceName" . }} -p {{ .Values.sentinel.service.port }}
+
+{{- end }}
+
+{{- if .Values.metrics.enabled }}
+
+To access the Redis metrics:
+
+    kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "redis.master.serviceName" . }} {{ .Values.metrics.port }}:{{ .Values.metrics.port }}
+
+    # Open http://localhost:{{ .Values.metrics.port }}/metrics in your browser
+
+{{- end }}
+
+{{- if eq .Values.architecture "replication" }}
+{{- if .Values.sentinel.enabled }}
+
+** High Availability Configuration **
+
+Your Redis deployment is configured with:
+- Architecture: Replication with Sentinel
+- Master: {{ .Values.master.count }} pod(s)
+- Replicas: {{ .Values.replica.replicaCount }} pod(s)
+- Sentinels: {{ .Values.sentinel.replicaCount }} pod(s)
+- Quorum: {{ .Values.sentinel.quorum }}
+
+Sentinel will automatically failover to a replica if the master becomes unavailable.
+Typical failover time: 10-30 seconds.
+
+{{- else }}
+
+** Note: Sentinel is not enabled **
+
+Your Redis deployment uses master-replica replication but Sentinel is disabled.
+This means there is NO automatic failover. If the master fails, you will need to
+manually promote a replica to master.
+
+To enable automatic failover, set: sentinel.enabled=true
+
+{{- end }}
+{{- end }}
+
+{{- if not (include "redis.auth.enabled" .) }}
+
+WARNING: Redis is deployed without authentication!
+This is NOT recommended for production environments.
+
+To enable authentication, set:
+  auth.enabled=true
+  auth.password="your-secure-password"
+
+{{- end }}
+
+{{- if not .Values.master.persistence.enabled }}
+
+WARNING: Persistence is disabled!
+Data will be lost if Redis pods restart.
+
+To enable persistence, set:
+  master.persistence.enabled=true
+{{- if eq .Values.architecture "replication" }}
+  replica.persistence.enabled=true
+{{- end }}
+
+{{- end }}
+
+For more information, visit:
+- Redis Documentation: https://redis.io/docs/
+- Chart repository: https://github.com/neomanexlabs/helm-charts
