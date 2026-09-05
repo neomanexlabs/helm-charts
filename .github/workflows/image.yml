@@ -1,0 +1,107 @@
+# Build and publish the public OpenCode container image to GHCR.
+#
+# Tag grammar: opencode-v<upstream>-<n>
+#   <upstream> = the upstream ghcr.io/anomalyco/opencode version
+#   <n>        = rebuild counter for the same upstream version
+# The image is pushed as :<upstream>-<n> and as the floating alias :<upstream>.
+name: image
+
+on:
+  push:
+    tags:
+      - 'opencode-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to build, in the form opencode-v<upstream>-<n>'
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  opencode:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Derive image tag and upstream version
+        id: version
+        env:
+          RAW_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Derive "<image_tag> <upstream_version>" from an opencode-v* git tag.
+          # Only a trailing rebuild counter (-<digits>) is stripped, so
+          # opencode-v1.14.48-1 -> "1.14.48-1 1.14.48" and
+          # opencode-v1.14.48   -> "1.14.48 1.14.48".
+          derive() {
+            tag="$1"
+            case "$tag" in
+              opencode-v*) ;;
+              *) echo "tag '$tag' does not match opencode-v*" >&2; return 1 ;;
+            esac
+            image_tag="${tag#opencode-v}"
+            case "$image_tag" in
+              *-[0-9]|*-[0-9][0-9]|*-[0-9][0-9][0-9]) upstream="${image_tag%-*}" ;;
+              *) upstream="$image_tag" ;;
+            esac
+            printf '%s %s\n' "$image_tag" "$upstream"
+          }
+
+          # Self-test the derivation before trusting it.
+          got="$(derive opencode-v1.14.48-1)"
+          [ "$got" = "1.14.48-1 1.14.48" ] || { echo "self-test failed for opencode-v1.14.48-1: '$got'" >&2; exit 1; }
+          got="$(derive opencode-v1.14.48)"
+          [ "$got" = "1.14.48 1.14.48" ] || { echo "self-test failed for opencode-v1.14.48: '$got'" >&2; exit 1; }
+          echo "derivation self-test passed"
+
+          # shellcheck disable=SC2046
+          set -- $(derive "$RAW_TAG")
+          IMAGE_TAG="$1"
+          OPENCODE_VERSION="$2"
+          echo "IMAGE_TAG=$IMAGE_TAG"
+          echo "OPENCODE_VERSION=$OPENCODE_VERSION"
+          {
+            echo "image_tag=$IMAGE_TAG"
+            echo "opencode_version=$OPENCODE_VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/neomanexlabs/opencode
+          tags: |
+            type=raw,value=${{ steps.version.outputs.image_tag }}
+            type=raw,value=${{ steps.version.outputs.opencode_version }}
+          labels: |
+            org.opencontainers.image.title=opencode
+            org.opencontainers.image.vendor=Neomanex
+            org.opencontainers.image.url=https://neomanex.com
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.version=${{ steps.version.outputs.image_tag }}
+
+      - name: Build and push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: images/opencode
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          build-args: |
+            OPENCODE_VERSION=${{ steps.version.outputs.opencode_version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
