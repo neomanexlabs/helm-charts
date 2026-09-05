@@ -1,0 +1,490 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "redis.scripts.configmapName" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels: {{- include "redis.labels" . | nindent 4 }}
+data:
+  ping-local.sh: |
+    #!/bin/bash
+    set -e
+    {{- if (include "redis.auth.enabled" .) }}
+    redis-cli -a "$(cat /opt/redis/password/redis-password)" ping | grep -q PONG
+    {{- else }}
+    redis-cli ping | grep -q PONG
+    {{- end }}
+
+  ping-readiness.sh: |
+    #!/bin/bash
+    set -e
+
+    {{- if (include "redis.auth.enabled" .) }}
+    REDIS_PASSWORD=$(cat /opt/redis/password/redis-password)
+    response=$(redis-cli -a "${REDIS_PASSWORD}" ping 2>/dev/null)
+    {{- else }}
+    response=$(redis-cli ping 2>/dev/null)
+    {{- end }}
+
+    if [ "$response" != "PONG" ]; then
+      echo "Redis not responding to PING"
+      exit 1
+    fi
+
+    {{- if eq .Values.architecture "replication" }}
+    # Role-aware readiness: verify pods have the correct Redis role
+    HOSTNAME=$(hostname)
+    MASTER_POD="{{ include "redis.fullname" . }}-master-0"
+
+    {{- if (include "redis.auth.enabled" .) }}
+    REDIS_CLI_AUTH="-a ${REDIS_PASSWORD}"
+    {{- else }}
+    REDIS_CLI_AUTH=""
+    {{- end }}
+
+    role=$(redis-cli ${REDIS_CLI_AUTH} info replication 2>/dev/null | grep ^role: | cut -d: -f2 | tr -d '\r')
+
+    if [ "$HOSTNAME" = "$MASTER_POD" ]; then
+      # Master pod: must have role=master
+      # If demoted to slave (e.g., after failover), readiness fails.
+      # This causes K8s to remove it from the master Service endpoints,
+      # preventing traffic to a non-master node.
+      if [ "$role" != "master" ]; then
+        echo "Master pod has role=${role}, expected master. Failing readiness."
+        exit 1
+      fi
+    else
+      # Replica pod: if role=slave, verify master_link_status=up
+      if [ "$role" = "slave" ]; then
+        link_status=$(redis-cli ${REDIS_CLI_AUTH} info replication 2>/dev/null | grep master_link_status: | cut -d: -f2 | tr -d '\r')
+
+        if [ "$link_status" != "up" ]; then
+          echo "Replica not connected to master (link_status: ${link_status})"
+          exit 1
+        fi
+      fi
+      # If role=master on a replica pod (post-failover), that's OK -- it's serving traffic
+    fi
+    {{- end }}
+
+    exit 0
+
+  ping-sentinel-local.sh: |
+    #!/bin/bash
+    set -e
+    {{- if and .Values.sentinel.enabled .Values.auth.sentinel }}
+    redis-cli -p 26379 -a "$(cat /opt/redis/password/redis-sentinel-password)" ping | grep -q PONG
+    {{- else }}
+    redis-cli -p 26379 ping | grep -q PONG
+    {{- end }}
+
+  ping-sentinel-readiness.sh: |
+    #!/bin/bash
+    set -e
+
+    {{- if and .Values.sentinel.enabled .Values.auth.sentinel }}
+    SENTINEL_PASSWORD=$(cat /opt/redis/password/redis-sentinel-password)
+    response=$(redis-cli -p 26379 -a "${SENTINEL_PASSWORD}" ping 2>/dev/null)
+    {{- else }}
+    response=$(redis-cli -p 26379 ping 2>/dev/null)
+    {{- end }}
+
+    if [ "$response" != "PONG" ]; then
+      echo "Sentinel not responding to PING"
+      exit 1
+    fi
+
+    # Check if Sentinel knows about the master
+    {{- if and .Values.sentinel.enabled .Values.auth.sentinel }}
+    master_info=$(redis-cli -p 26379 -a "${SENTINEL_PASSWORD}" sentinel master {{ .Values.sentinel.masterSet }} 2>/dev/null)
+    {{- else }}
+    master_info=$(redis-cli -p 26379 sentinel master {{ .Values.sentinel.masterSet }} 2>/dev/null)
+    {{- end }}
+
+    if [ -z "$master_info" ]; then
+      echo "Sentinel doesn't know about master"
+      exit 1
+    fi
+
+    exit 0
+
+  {{- if and .Values.sentinel.enabled .Values.master.watchdog.enabled }}
+  watchdog-master.sh: |
+    #!/bin/bash
+    # Watchdog sidecar script: continuously monitors Redis role on master-0.
+    # If Sentinel demotes master-0 AFTER boot (not caught by start-master.sh),
+    # the watchdog detects the role change and triggers SENTINEL FAILOVER to
+    # reclaim master. Without this, master-0 stays as slave, the K8s master
+    # service points to a NotReady pod, and all clients lose connectivity.
+
+    INTERVAL={{ .Values.master.watchdog.intervalSeconds }}
+    COOLDOWN={{ .Values.master.watchdog.cooldownSeconds }}
+    SENTINEL_HOST="{{ include "redis.fullname" . }}-sentinel.{{ .Release.Namespace }}.svc.cluster.local"
+    MASTER_SET="{{ .Values.sentinel.masterSet }}"
+
+    {{- if (include "redis.auth.enabled" .) }}
+    REDIS_PASSWORD=$(cat /opt/redis/password/redis-password)
+    REDIS_CLI_AUTH="-a ${REDIS_PASSWORD}"
+    {{- else }}
+    REDIS_CLI_AUTH=""
+    {{- end }}
+
+    {{- if and (include "redis.auth.enabled" .) .Values.auth.sentinel }}
+    SENTINEL_AUTH="-a $(cat /opt/redis/password/redis-sentinel-password)"
+    {{- else }}
+    SENTINEL_AUTH=""
+    {{- end }}
+
+    echo "WATCHDOG: Starting master role watchdog (interval=${INTERVAL}s, cooldown=${COOLDOWN}s)"
+
+    while true; do
+      sleep ${INTERVAL}
+
+      role=$(redis-cli ${REDIS_CLI_AUTH} INFO replication 2>/dev/null | grep ^role: | cut -d: -f2 | tr -d '\r')
+
+      if [ -z "$role" ]; then
+        echo "WATCHDOG: Could not determine Redis role (redis-cli failed). Retrying next cycle."
+        continue
+      fi
+
+      if [ "$role" = "master" ]; then
+        # All good, master-0 is still master
+        continue
+      fi
+
+      echo "WATCHDOG: Role is '${role}', expected 'master'. Triggering Sentinel failover..."
+
+      redis-cli -h "${SENTINEL_HOST}" -p 26379 ${SENTINEL_AUTH} \
+        sentinel failover ${MASTER_SET} 2>/dev/null || true
+
+      echo "WATCHDOG: Failover requested. Entering cooldown (${COOLDOWN}s) to let Sentinel converge."
+      sleep ${COOLDOWN}
+    done
+  {{- end }}
+
+  start-master.sh: |
+    #!/bin/bash
+    set -e
+
+    {{- if (include "redis.auth.enabled" .) }}
+    REDIS_PASSWORD=$(cat /opt/redis/password/redis-password)
+    {{- end }}
+
+    HOSTNAME=$(hostname)
+    HEADLESS_SERVICE="{{ include "redis.headless.serviceName" . }}"
+    NAMESPACE="{{ .Release.Namespace }}"
+    MY_FQDN="${HOSTNAME}.${HEADLESS_SERVICE}.${NAMESPACE}.svc.cluster.local"
+
+    # Common args for redis-server
+    REDIS_ARGS="/opt/redis/redis.conf"
+    {{- if (include "redis.auth.enabled" .) }}
+    REDIS_ARGS="${REDIS_ARGS} --requirepass ${REDIS_PASSWORD} --masterauth ${REDIS_PASSWORD}"
+    {{- end }}
+    REDIS_ARGS="${REDIS_ARGS} --replica-announce-ip ${MY_FQDN} --replica-announce-port 6379"
+
+    {{- if .Values.sentinel.enabled }}
+    # Sentinel-aware startup with auto-failback.
+    # If Sentinel reports another node as master (post-failover), this pod:
+    # 1. Starts as replica to sync data
+    # 2. Triggers SENTINEL FAILOVER to reclaim master role (priority 1 vs 100)
+    # 3. Continues running as master after promotion
+    # This ensures the K8s master service always routes to the actual Redis master.
+    SENTINEL_HOST="{{ include "redis.fullname" . }}-sentinel.{{ .Release.Namespace }}.svc.cluster.local"
+    {{- if and (include "redis.auth.enabled" .) .Values.auth.sentinel }}
+    SENTINEL_AUTH="-a $(cat /opt/redis/password/redis-sentinel-password)"
+    {{- else }}
+    SENTINEL_AUTH=""
+    {{- end }}
+    SENTINEL_REACHABLE=false
+
+    echo "Checking Sentinel at ${SENTINEL_HOST}:26379..."
+    for i in $(seq 1 15); do
+      if redis-cli -h "${SENTINEL_HOST}" -p 26379 ${SENTINEL_AUTH} ping 2>/dev/null | grep -q PONG; then
+        SENTINEL_REACHABLE=true
+        break
+      fi
+      echo "Sentinel not ready, retry $i/15..."
+      sleep 2
+    done
+
+    if [ "$SENTINEL_REACHABLE" = "true" ]; then
+      MASTER_INFO=$(redis-cli -h "${SENTINEL_HOST}" -p 26379 ${SENTINEL_AUTH} \
+        sentinel get-master-addr-by-name {{ .Values.sentinel.masterSet }} 2>/dev/null)
+
+      if [ -n "${MASTER_INFO}" ]; then
+        CURRENT_MASTER=$(echo "${MASTER_INFO}" | head -n 1)
+        CURRENT_MASTER_PORT=$(echo "${MASTER_INFO}" | tail -n 1)
+        echo "Sentinel reports master: ${CURRENT_MASTER}:${CURRENT_MASTER_PORT}"
+
+        if [ "${CURRENT_MASTER}" != "${MY_FQDN}" ]; then
+          echo "Another node is master (${CURRENT_MASTER}). Starting failback sequence..."
+
+          # Start redis as replica in background with low priority (preferred for promotion)
+          redis-server ${REDIS_ARGS} \
+            --replicaof "${CURRENT_MASTER}" ${CURRENT_MASTER_PORT} \
+            --replica-priority 1 \
+            --daemonize no &
+          REDIS_PID=$!
+
+          # Forward signals to redis process
+          trap "kill -TERM ${REDIS_PID} 2>/dev/null; wait ${REDIS_PID} 2>/dev/null; exit 0" SIGTERM SIGINT
+
+          # Wait for replication link to sync
+          echo "Waiting for replication sync..."
+          SYNCED=false
+          {{- if (include "redis.auth.enabled" .) }}
+          REDIS_CLI_AUTH="-a ${REDIS_PASSWORD}"
+          {{- else }}
+          REDIS_CLI_AUTH=""
+          {{- end }}
+          for i in $(seq 1 30); do
+            link_status=$(redis-cli ${REDIS_CLI_AUTH} INFO replication 2>/dev/null | grep master_link_status: | cut -d: -f2 | tr -d '\r')
+            if [ "$link_status" = "up" ]; then
+              echo "Replication synced after ${i}s."
+              SYNCED=true
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$SYNCED" = "true" ]; then
+            # Request Sentinel failover. Sentinel picks us (priority 1 vs others at 100).
+            echo "Requesting Sentinel failover to reclaim master role..."
+            redis-cli -h "${SENTINEL_HOST}" -p 26379 ${SENTINEL_AUTH} \
+              sentinel failover {{ .Values.sentinel.masterSet }} 2>/dev/null || true
+
+            # Wait for promotion
+            echo "Waiting for promotion to master..."
+            for i in $(seq 1 60); do
+              role=$(redis-cli ${REDIS_CLI_AUTH} INFO replication 2>/dev/null | grep ^role: | cut -d: -f2 | tr -d '\r')
+              if [ "$role" = "master" ]; then
+                echo "Promoted to master after ${i}s. Failback complete."
+                break
+              fi
+              sleep 1
+            done
+
+            # Verify final state
+            final_role=$(redis-cli ${REDIS_CLI_AUTH} INFO replication 2>/dev/null | grep ^role: | cut -d: -f2 | tr -d '\r')
+            if [ "$final_role" != "master" ]; then
+              echo "WARNING: Failback did not complete within 60s. Current role: ${final_role}"
+              echo "Redis continues running. Sentinel may resolve this automatically."
+            fi
+          else
+            echo "WARNING: Replication sync timed out after 30s. Skipping failback."
+            echo "Redis continues running as replica. Manual intervention may be needed."
+          fi
+
+          # Redis is running in background, so wait for it (keeps container alive)
+          wait ${REDIS_PID}
+          exit $?
+        fi
+        echo "I am the Sentinel-recognized master. Starting with post-start verification..."
+
+        # Start redis as master in background (not exec) so we can verify after Sentinel converges
+        redis-server ${REDIS_ARGS} --replica-priority 1 --daemonize no &
+        REDIS_PID=$!
+
+        # Forward signals to redis process
+        trap "kill -TERM ${REDIS_PID} 2>/dev/null; wait ${REDIS_PID} 2>/dev/null; exit 0" SIGTERM SIGINT
+
+        # Wait for Sentinel quorum to converge before checking role
+        echo "Waiting 15s for Sentinel quorum to converge..."
+        sleep 15
+
+        # Set up auth for redis-cli
+        {{- if (include "redis.auth.enabled" .) }}
+        REDIS_CLI_AUTH="-a ${REDIS_PASSWORD}"
+        {{- else }}
+        REDIS_CLI_AUTH=""
+        {{- end }}
+
+        # Verify our role after Sentinel convergence
+        POST_START_ROLE=$(redis-cli ${REDIS_CLI_AUTH} INFO replication 2>/dev/null | grep ^role: | cut -d: -f2 | tr -d '\r')
+        echo "Post-start role check: ${POST_START_ROLE}"
+
+        if [ "$POST_START_ROLE" = "master" ]; then
+          echo "Confirmed as master after Sentinel convergence. Continuing normally."
+          wait ${REDIS_PID}
+          exit $?
+        fi
+
+        # Sentinel demoted us to slave, so trigger failback to reclaim master
+        echo "Sentinel demoted us to slave after convergence. Triggering failback..."
+
+        # Set low priority for promotion preference
+        redis-cli ${REDIS_CLI_AUTH} CONFIG SET replica-priority 1 2>/dev/null || true
+
+        # Request Sentinel failover. Sentinel picks us (priority 1 vs others at 100).
+        echo "Requesting Sentinel failover to reclaim master role..."
+        redis-cli -h "${SENTINEL_HOST}" -p 26379 ${SENTINEL_AUTH} \
+          sentinel failover {{ .Values.sentinel.masterSet }} 2>/dev/null || true
+
+        # Wait for promotion
+        echo "Waiting for promotion to master..."
+        for i in $(seq 1 60); do
+          role=$(redis-cli ${REDIS_CLI_AUTH} INFO replication 2>/dev/null | grep ^role: | cut -d: -f2 | tr -d '\r')
+          if [ "$role" = "master" ]; then
+            echo "Promoted to master after ${i}s. Post-start failback complete."
+            break
+          fi
+          sleep 1
+        done
+
+        # Verify final state
+        final_role=$(redis-cli ${REDIS_CLI_AUTH} INFO replication 2>/dev/null | grep ^role: | cut -d: -f2 | tr -d '\r')
+        if [ "$final_role" != "master" ]; then
+          echo "WARNING: Post-start failback did not complete within 60s. Current role: ${final_role}"
+          echo "Redis continues running. Sentinel may resolve this automatically."
+        fi
+
+        # Redis is running in background, so wait for it (keeps container alive)
+        wait ${REDIS_PID}
+        exit $?
+      else
+        echo "Sentinel has no master info. Starting as master (initial boot)."
+      fi
+    else
+      echo "Sentinel not reachable after 30s. Starting as master (cold start)."
+    fi
+    {{- end }}
+
+    # Normal path: start as master with low priority (preferred for Sentinel promotion)
+    # Reached when: Sentinel not enabled, Sentinel unreachable, or Sentinel has no master info
+    exec redis-server ${REDIS_ARGS} --replica-priority 1
+
+  start-replica.sh: |
+    #!/bin/bash
+    set -e
+
+    {{- if (include "redis.auth.enabled" .) }}
+    REDIS_PASSWORD=$(cat /opt/redis/password/redis-password)
+    {{- end }}
+
+    HOSTNAME=$(hostname)
+    HEADLESS_SERVICE="{{ include "redis.headless.serviceName" . }}"
+    NAMESPACE="{{ .Release.Namespace }}"
+    MY_FQDN="${HOSTNAME}.${HEADLESS_SERVICE}.${NAMESPACE}.svc.cluster.local"
+
+    # Initial master configuration (Sentinel will update if needed)
+    MASTER_HOST="{{ include "redis.initialMasterHost" . }}"
+    MASTER_PORT=6379
+
+    {{- if .Values.sentinel.enabled }}
+    # Wait for Sentinel to be available
+    SENTINEL_HOST="{{ include "redis.fullname" . }}-sentinel.{{ .Release.Namespace }}.svc.cluster.local"
+    echo "Waiting for Sentinel at ${SENTINEL_HOST}:26379..."
+
+    until redis-cli -h "${SENTINEL_HOST}" -p 26379 \
+      {{- if and (include "redis.auth.enabled" .) .Values.auth.sentinel }}
+      -a "$(cat /opt/redis/password/redis-sentinel-password)" \
+      {{- end }}
+      ping 2>/dev/null | grep -q PONG; do
+      echo "Sentinel not ready, retrying in 2 seconds..."
+      sleep 2
+    done
+
+    # Get current master from Sentinel
+    MASTER_INFO=$(redis-cli -h "${SENTINEL_HOST}" -p 26379 \
+      {{- if and (include "redis.auth.enabled" .) .Values.auth.sentinel }}
+      -a "$(cat /opt/redis/password/redis-sentinel-password)" \
+      {{- end }}
+      sentinel get-master-addr-by-name {{ .Values.sentinel.masterSet }} 2>/dev/null)
+
+    if [ -n "${MASTER_INFO}" ]; then
+      MASTER_HOST=$(echo "${MASTER_INFO}" | head -n 1)
+      MASTER_PORT=$(echo "${MASTER_INFO}" | tail -n 1)
+      echo "Got master from Sentinel: ${MASTER_HOST}:${MASTER_PORT}"
+
+      # CRITICAL: If Sentinel says WE are the master, start as master (no --replicaof).
+      # This prevents the circular deadlock where a promoted replica restarts and
+      # does --replicaof itself. master-0's existing auto-failback logic will detect
+      # this, sync data, and reclaim via SENTINEL FAILOVER (priority 1 vs 100).
+      if [ "${MASTER_HOST}" = "${MY_FQDN}" ]; then
+        echo "Sentinel reports THIS pod as master. Starting as master (no --replicaof)."
+        exec redis-server /opt/redis/redis.conf \
+          {{- if (include "redis.auth.enabled" .) }}
+          --requirepass "${REDIS_PASSWORD}" \
+          --masterauth "${REDIS_PASSWORD}" \
+          {{- end }}
+          --replica-announce-ip "${MY_FQDN}" \
+          --replica-announce-port 6379 \
+          --replica-priority 100
+      fi
+    fi
+    {{- end }}
+
+    # Normal path: start as replica
+    exec redis-server /opt/redis/redis.conf \
+      {{- if (include "redis.auth.enabled" .) }}
+      --requirepass "${REDIS_PASSWORD}" \
+      --masterauth "${REDIS_PASSWORD}" \
+      {{- end }}
+      --replicaof "${MASTER_HOST}" ${MASTER_PORT} \
+      --replica-announce-ip "${MY_FQDN}" \
+      --replica-announce-port 6379 \
+      --replica-priority 100
+
+  start-sentinel.sh: |
+    #!/bin/bash
+    set -e
+
+    {{- if (include "redis.auth.enabled" .) }}
+    REDIS_PASSWORD=$(cat /opt/redis/password/redis-password)
+    {{- if .Values.auth.sentinel }}
+    SENTINEL_PASSWORD=$(cat /opt/redis/password/redis-sentinel-password)
+    {{- end }}
+    {{- end }}
+
+    # Sentinel state preservation: if a persisted config exists from a previous
+    # run (with correct post-failover master), use it instead of the template.
+    # This prevents overwriting Sentinel's knowledge of the actual master after failover.
+    if [ -f /data/sentinel.conf ] && grep -q "sentinel monitor" /data/sentinel.conf; then
+      echo "Found persisted sentinel config, preserving failover state."
+      # Update passwords in case they rotated (but keep the monitor target)
+      {{- if (include "redis.auth.enabled" .) }}
+      # Ensure auth-pass is current
+      sed -i "s/^sentinel auth-pass {{ .Values.sentinel.masterSet }} .*/sentinel auth-pass {{ .Values.sentinel.masterSet }} ${REDIS_PASSWORD}/" /data/sentinel.conf
+      {{- if .Values.auth.sentinel }}
+      sed -i "s/^requirepass .*/requirepass ${SENTINEL_PASSWORD}/" /data/sentinel.conf
+      {{- end }}
+      {{- end }}
+    else
+      echo "No persisted config found, using template (initial boot)."
+      cp /opt/redis/sentinel.conf /data/sentinel.conf
+      {{- if (include "redis.auth.enabled" .) }}
+      sed -i "s/REDIS_PASSWORD_PLACEHOLDER/${REDIS_PASSWORD}/g" /data/sentinel.conf
+      {{- if .Values.auth.sentinel }}
+      sed -i "s/SENTINEL_PASSWORD_PLACEHOLDER/${SENTINEL_PASSWORD}/g" /data/sentinel.conf
+      {{- end }}
+      {{- end }}
+    fi
+
+    # Wait for ANY Redis node to be available (not just hardcoded master)
+    # After a failover, the original master may not be up yet
+    MASTER_HOST="{{ include "redis.initialMasterHost" . }}"
+    REPLICA_HOSTS="{{- $fullname := include "redis.fullname" . }}{{- $headless := include "redis.headless.serviceName" . }}{{- $namespace := .Release.Namespace }}{{- range $i := until (.Values.replica.replicaCount | int) }}{{- if gt $i 0 }} {{ end }}{{ $fullname }}-replicas-{{ $i }}.{{ $headless }}.{{ $namespace }}.svc.cluster.local{{- end }}"
+
+    echo "Waiting for a Redis node to be available..."
+    FOUND=false
+    for attempt in $(seq 1 30); do
+      for host in ${MASTER_HOST} ${REPLICA_HOSTS}; do
+        if redis-cli -h "${host}" -p 6379 \
+          {{- if (include "redis.auth.enabled" .) }}
+          -a "${REDIS_PASSWORD}" \
+          {{- end }}
+          ping 2>/dev/null | grep -q PONG; then
+          echo "Redis node ${host} is ready."
+          FOUND=true
+          break 2
+        fi
+      done
+      echo "No Redis node ready, retry $attempt/30..."
+      sleep 2
+    done
+
+    if [ "$FOUND" = "false" ]; then
+      echo "WARNING: No Redis node reachable after 60s. Starting Sentinel anyway."
+    fi
+
+    echo "Starting Sentinel..."
+    exec redis-sentinel /data/sentinel.conf

@@ -1,0 +1,38 @@
+{{- if and (eq .Values.architecture "replication") .Values.sentinel.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "redis.sentinel.serviceName" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels: {{- include "redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sentinel
+    {{- if .Values.sentinel.service.labels }}
+    {{- toYaml .Values.sentinel.service.labels | nindent 4 }}
+    {{- end }}
+  {{- if .Values.sentinel.service.annotations }}
+  annotations: {{- toYaml .Values.sentinel.service.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.sentinel.service.type }}
+  {{- if and .Values.sentinel.service.loadBalancerIP (eq .Values.sentinel.service.type "LoadBalancer") }}
+  loadBalancerIP: {{ .Values.sentinel.service.loadBalancerIP }}
+  {{- end }}
+  {{- if and .Values.sentinel.service.loadBalancerSourceRanges (eq .Values.sentinel.service.type "LoadBalancer") }}
+  loadBalancerSourceRanges: {{- toYaml .Values.sentinel.service.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  {{- if and (eq .Values.sentinel.service.type "LoadBalancer") .Values.sentinel.service.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ .Values.sentinel.service.externalTrafficPolicy }}
+  {{- end }}
+  {{- if .Values.sentinel.service.sessionAffinity }}
+  sessionAffinity: {{ .Values.sentinel.service.sessionAffinity }}
+  {{- end }}
+  ports:
+    - name: tcp-sentinel
+      port: {{ .Values.sentinel.service.port }}
+      targetPort: sentinel
+      {{- if and .Values.sentinel.service.nodePorts.sentinel (or (eq .Values.sentinel.service.type "NodePort") (eq .Values.sentinel.service.type "LoadBalancer")) }}
+      nodePort: {{ .Values.sentinel.service.nodePorts.sentinel }}
+      {{- end }}
+  selector: {{- include "redis.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sentinel
+{{- end }}

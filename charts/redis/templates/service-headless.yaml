@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "redis.headless.serviceName" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels: {{- include "redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: headless
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: tcp-redis
+      port: {{ include "redis.containerPort" . }}
+      targetPort: redis
+    {{- if .Values.sentinel.enabled }}
+    - name: tcp-sentinel
+      port: {{ include "redis.sentinel.containerPort" . }}
+      targetPort: sentinel
+    {{- end }}
+  selector: {{- include "redis.selectorLabels" . | nindent 4 }}

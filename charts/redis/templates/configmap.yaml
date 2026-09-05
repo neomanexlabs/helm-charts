@@ -1,0 +1,111 @@
+{{- if not .Values.existingConfigmap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "redis.configmapName" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels: {{- include "redis.labels" . | nindent 4 }}
+data:
+  redis.conf: |
+    {{- if .Values.configuration.custom }}
+    {{- .Values.configuration.custom | nindent 4 }}
+    {{- else }}
+    # Redis configuration file
+    {{- if .Values.configuration.enabled }}
+    # Network
+    protected-mode {{ index .Values.configuration "protected-mode" }}
+    tcp-backlog {{ index .Values.configuration "tcp-backlog" }}
+    timeout {{ index .Values.configuration "timeout" }}
+    tcp-keepalive {{ index .Values.configuration "tcp-keepalive" }}
+
+    # General
+    daemonize {{ .Values.configuration.daemonize }}
+    pidfile {{ .Values.configuration.pidfile }}
+    loglevel {{ .Values.configuration.loglevel }}
+    databases {{ .Values.configuration.databases }}
+
+    # Snapshotting
+    {{- if .Values.configuration.save }}
+    save {{ .Values.configuration.save }}
+    {{- end }}
+    stop-writes-on-bgsave-error {{ index .Values.configuration "stop-writes-on-bgsave-error" }}
+    rdbcompression {{ .Values.configuration.rdbcompression }}
+    rdbchecksum {{ .Values.configuration.rdbchecksum }}
+    dbfilename {{ .Values.configuration.dbfilename }}
+    dir {{ .Values.configuration.dir }}
+
+    # Replication
+    replica-serve-stale-data {{ index .Values.configuration "replica-serve-stale-data" }}
+    replica-read-only {{ index .Values.configuration "replica-read-only" }}
+    repl-diskless-sync {{ index .Values.configuration "repl-diskless-sync" }}
+    repl-diskless-sync-delay {{ index .Values.configuration "repl-diskless-sync-delay" }}
+    repl-disable-tcp-nodelay {{ index .Values.configuration "repl-disable-tcp-nodelay" }}
+    replica-priority {{ index .Values.configuration "replica-priority" }}
+    {{- if index .Values.configuration "min-replicas-to-write" }}
+    min-replicas-to-write {{ index .Values.configuration "min-replicas-to-write" }}
+    {{- end }}
+    {{- if index .Values.configuration "min-replicas-max-lag" }}
+    min-replicas-max-lag {{ index .Values.configuration "min-replicas-max-lag" }}
+    {{- end }}
+
+    # Memory Management
+    {{- if .Values.configuration.maxmemory }}
+    maxmemory {{ .Values.configuration.maxmemory }}
+    {{- end }}
+    maxmemory-policy {{ index .Values.configuration "maxmemory-policy" }}
+    maxmemory-samples {{ index .Values.configuration "maxmemory-samples" }}
+
+    # Lazy freeing
+    lazyfree-lazy-eviction {{ index .Values.configuration "lazyfree-lazy-eviction" }}
+    lazyfree-lazy-expire {{ index .Values.configuration "lazyfree-lazy-expire" }}
+    lazyfree-lazy-server-del {{ index .Values.configuration "lazyfree-lazy-server-del" }}
+    replica-lazy-flush {{ index .Values.configuration "replica-lazy-flush" }}
+
+    # Append Only Mode
+    appendonly {{ .Values.configuration.appendonly }}
+    appendfilename {{ .Values.configuration.appendfilename | quote }}
+    appendfsync {{ .Values.configuration.appendfsync }}
+    no-appendfsync-on-rewrite {{ index .Values.configuration "no-appendfsync-on-rewrite" }}
+    auto-aof-rewrite-percentage {{ index .Values.configuration "auto-aof-rewrite-percentage" }}
+    auto-aof-rewrite-min-size {{ index .Values.configuration "auto-aof-rewrite-min-size" | quote }}
+    aof-load-truncated {{ index .Values.configuration "aof-load-truncated" }}
+    aof-use-rdb-preamble {{ index .Values.configuration "aof-use-rdb-preamble" }}
+
+    # Lua scripting
+    lua-time-limit {{ index .Values.configuration "lua-time-limit" }}
+
+    # Slow log
+    slowlog-log-slower-than {{ index .Values.configuration "slowlog-log-slower-than" }}
+    slowlog-max-len {{ index .Values.configuration "slowlog-max-len" }}
+
+    # Latency monitor
+    latency-monitor-threshold {{ index .Values.configuration "latency-monitor-threshold" }}
+
+    # Event notification
+    {{- if index .Values.configuration "notify-keyspace-events" }}
+    notify-keyspace-events {{ index .Values.configuration "notify-keyspace-events" | quote }}
+    {{- end }}
+
+    # Advanced config
+    hash-max-ziplist-entries {{ index .Values.configuration "hash-max-ziplist-entries" }}
+    hash-max-ziplist-value {{ index .Values.configuration "hash-max-ziplist-value" }}
+    list-max-ziplist-size {{ index .Values.configuration "list-max-ziplist-size" }}
+    list-compress-depth {{ index .Values.configuration "list-compress-depth" }}
+    set-max-intset-entries {{ index .Values.configuration "set-max-intset-entries" }}
+    zset-max-ziplist-entries {{ index .Values.configuration "zset-max-ziplist-entries" }}
+    zset-max-ziplist-value {{ index .Values.configuration "zset-max-ziplist-value" }}
+    hll-sparse-max-bytes {{ index .Values.configuration "hll-sparse-max-bytes" }}
+    stream-node-max-bytes {{ index .Values.configuration "stream-node-max-bytes" }}
+    stream-node-max-entries {{ index .Values.configuration "stream-node-max-entries" }}
+
+    # Active defragmentation
+    activedefrag {{ .Values.configuration.activedefrag }}
+    active-defrag-ignore-bytes {{ index .Values.configuration "active-defrag-ignore-bytes" | quote }}
+    active-defrag-threshold-lower {{ index .Values.configuration "active-defrag-threshold-lower" }}
+    active-defrag-threshold-upper {{ index .Values.configuration "active-defrag-threshold-upper" }}
+    active-defrag-cycle-min {{ index .Values.configuration "active-defrag-cycle-min" }}
+    active-defrag-cycle-max {{ index .Values.configuration "active-defrag-cycle-max" }}
+    active-defrag-max-scan-fields {{ index .Values.configuration "active-defrag-max-scan-fields" }}
+    {{- end }}
+    {{- end }}
+{{- end }}

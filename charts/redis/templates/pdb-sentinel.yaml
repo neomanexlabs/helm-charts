@@ -1,0 +1,14 @@
+{{- if and (eq .Values.architecture "replication") .Values.sentinel.enabled .Values.sentinel.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "redis.sentinel.statefulsetName" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels: {{- include "redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sentinel
+spec:
+  minAvailable: {{ .Values.sentinel.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels: {{- include "redis.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sentinel
+{{- end }}

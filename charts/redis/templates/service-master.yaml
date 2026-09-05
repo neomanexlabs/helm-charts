@@ -1,0 +1,43 @@
+{{- if or (eq .Values.architecture "standalone") (eq .Values.architecture "replication") }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "redis.master.serviceName" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels: {{- include "redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: master
+  {{- if .Values.master.service.annotations }}
+  annotations: {{- toYaml .Values.master.service.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.master.service.type }}
+  {{- if and (eq .Values.master.service.type "LoadBalancer") .Values.master.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.master.service.loadBalancerIP }}
+  {{- end }}
+  {{- if and (eq .Values.master.service.type "LoadBalancer") .Values.master.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges: {{- toYaml .Values.master.service.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  {{- if .Values.master.service.sessionAffinity }}
+  sessionAffinity: {{ .Values.master.service.sessionAffinity }}
+  {{- end }}
+  {{- if .Values.master.service.sessionAffinityConfig }}
+  sessionAffinityConfig: {{- toYaml .Values.master.service.sessionAffinityConfig | nindent 4 }}
+  {{- end }}
+  {{- if or (eq .Values.master.service.type "LoadBalancer") (eq .Values.master.service.type "NodePort") }}
+  externalTrafficPolicy: {{ .Values.master.service.externalTrafficPolicy | quote }}
+  {{- end }}
+  ports:
+    - name: tcp-redis
+      port: {{ .Values.master.service.port }}
+      targetPort: redis
+      {{- if and (or (eq .Values.master.service.type "NodePort") (eq .Values.master.service.type "LoadBalancer")) .Values.master.service.nodePort }}
+      nodePort: {{ .Values.master.service.nodePort }}
+      {{- end }}
+    {{- if .Values.metrics.enabled }}
+    - name: metrics
+      port: {{ .Values.metrics.port | default 9121 }}
+      targetPort: metrics
+    {{- end }}
+  selector: {{- include "redis.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: master
+{{- end }}

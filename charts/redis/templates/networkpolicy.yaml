@@ -1,0 +1,81 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "redis.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels: {{- include "redis.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "redis.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow inbound traffic to Redis port
+    - ports:
+        - port: {{ include "redis.containerPort" . }}
+          protocol: TCP
+      {{- if not .Values.networkPolicy.allowExternal }}
+      from:
+        - podSelector:
+            matchLabels: {{- include "redis.selectorLabels" . | nindent 14 }}
+        {{- if .Values.networkPolicy.ingressNSMatchLabels }}
+        - namespaceSelector:
+            matchLabels: {{- toYaml .Values.networkPolicy.ingressNSMatchLabels | nindent 14 }}
+          {{- if .Values.networkPolicy.ingressNSPodMatchLabels }}
+          podSelector:
+            matchLabels: {{- toYaml .Values.networkPolicy.ingressNSPodMatchLabels | nindent 14 }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+    {{- if .Values.metrics.enabled }}
+    # Allow inbound traffic to metrics port
+    - ports:
+        - port: {{ include "redis.metrics.containerPort" . }}
+          protocol: TCP
+    {{- end }}
+    {{- if .Values.sentinel.enabled }}
+    # Allow inbound traffic to Sentinel port
+    - ports:
+        - port: {{ include "redis.sentinel.containerPort" . }}
+          protocol: TCP
+      {{- if not .Values.networkPolicy.allowExternal }}
+      from:
+        - podSelector:
+            matchLabels: {{- include "redis.selectorLabels" . | nindent 14 }}
+      {{- end }}
+    {{- end }}
+    {{- if .Values.networkPolicy.ingressRules }}
+    # Custom ingress rules
+    {{- toYaml .Values.networkPolicy.ingressRules | nindent 4 }}
+    {{- end }}
+  egress:
+    # Allow DNS resolution
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Allow outbound to other Redis pods (for replication)
+    - ports:
+        - port: {{ include "redis.containerPort" . }}
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels: {{- include "redis.selectorLabels" . | nindent 14 }}
+    {{- if .Values.sentinel.enabled }}
+    # Allow outbound to Sentinel pods
+    - ports:
+        - port: {{ include "redis.sentinel.containerPort" . }}
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels: {{- include "redis.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: sentinel
+    {{- end }}
+    {{- if .Values.networkPolicy.egressRules }}
+    # Custom egress rules
+    {{- toYaml .Values.networkPolicy.egressRules | nindent 4 }}
+    {{- end }}
+{{- end }}

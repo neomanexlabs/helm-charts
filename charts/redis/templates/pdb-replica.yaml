@@ -1,0 +1,19 @@
+{{- if and (eq .Values.architecture "replication") (gt (.Values.replica.replicaCount | int) 0) .Values.replica.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "redis.replica.statefulsetName" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels: {{- include "redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: replica
+spec:
+  {{- if .Values.replica.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.replica.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  {{- if .Values.replica.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.replica.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "redis.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: replica
+{{- end }}

@@ -1,0 +1,30 @@
+# Fixture: passwords come from External Secrets Operator, so the chart must
+# render an ExternalSecret and no in-chart Secret at all.
+architecture: replication
+
+auth:
+  enabled: true
+  # The name of the Secret that the ExternalSecret creates and the pods mount.
+  existingSecret: example-redis-credentials
+  existingSecretPasswordKey: redis-password
+  sentinel: true
+  existingSecretSentinelPasswordKey: redis-sentinel-password
+
+externalSecrets:
+  enabled: true
+  refreshInterval: 1h
+  secretStore:
+    name: example-store
+    kind: ClusterSecretStore
+  redisPasswordSecret:
+    key: example-redis-password
+  sentinelPasswordSecret:
+    key: example-sentinel-password
+
+replica:
+  replicaCount: 2
+
+sentinel:
+  enabled: true
+  replicaCount: 3
+  quorum: 2

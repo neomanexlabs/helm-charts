@@ -1,0 +1,937 @@
+# =============================================================================
+# REDIS HELM CHART - DEFAULT VALUES
+#
+# Two supported architectures:
+#   standalone  one Redis instance, no failover (development, cache workloads)
+#   replication one master, N replicas, and optionally Sentinel for failover
+#
+# Every key below is read by a template. Features the chart does not implement
+# (TLS termination, Redis Cluster mode, scheduled backups) carry no keys at
+# all, so this file is the honest surface of what the chart can do.
+# =============================================================================
+
+# =============================================================================
+# NAMING
+# =============================================================================
+# -- Override the chart name used in resource names
+nameOverride: ""
+# -- Override the fully qualified release name used in resource names
+fullnameOverride: ""
+
+# =============================================================================
+# GLOBAL
+# =============================================================================
+global:
+  # -- Image registry applied to every image in the chart (empty uses each image's own registry)
+  imageRegistry: ""
+  # -- Image pull secret names added to every pod
+  imagePullSecrets: []
+  # -- StorageClass applied to every PersistentVolumeClaim unless a component overrides it
+  storageClass: ""
+  redis:
+    # -- Redis password, takes precedence over auth.password
+    password: ""
+
+# =============================================================================
+# ARCHITECTURE
+# =============================================================================
+# -- Deployment architecture: `standalone` (single instance) or `replication`
+# (master plus replicas, with optional Sentinel). Any other value fails the
+# render.
+architecture: standalone
+
+# =============================================================================
+# IMAGE
+# =============================================================================
+image:
+  # -- Redis image registry
+  registry: docker.io
+  # -- Redis image repository
+  repository: redis
+  # -- Redis image tag
+  tag: 7.4.2-alpine
+  # -- Redis image pull policy
+  pullPolicy: IfNotPresent
+  # -- Image pull secret names for the Redis image
+  pullSecrets: []
+
+# =============================================================================
+# AUTHENTICATION
+# =============================================================================
+auth:
+  # -- Require a password on every Redis and Sentinel connection
+  enabled: true
+  # -- Redis password. Leave empty and the chart generates one on first install
+  # and reuses it on every upgrade, so nothing well known ships as a default.
+  # Ignored when auth.existingSecret is set.
+  password: ""
+  # -- Name of a Secret you manage yourself that already holds the passwords.
+  # When set, the chart renders no Secret of its own.
+  existingSecret: ""
+  # -- Key inside auth.existingSecret that holds the Redis password
+  existingSecretPasswordKey: "redis-password"
+  # -- Require a password on Sentinel connections as well (Sentinel only)
+  sentinel: true
+  # -- Sentinel password. Same generation rule as auth.password.
+  sentinelPassword: ""
+  # -- Key inside auth.existingSecret that holds the Sentinel password
+  existingSecretSentinelPasswordKey: "redis-sentinel-password"
+
+# =============================================================================
+# EXTERNAL SECRETS OPERATOR
+# =============================================================================
+# Off by default: the chart installs on a cluster that has no External Secrets
+# Operator. Turn it on to have the passwords delivered from an external secret
+# store, and point auth.existingSecret at the Secret the operator creates.
+externalSecrets:
+  # -- Render an ExternalSecret that delivers the Redis and Sentinel passwords
+  enabled: false
+  # -- How often the operator re-reads the remote values
+  refreshInterval: "6h"
+  secretStore:
+    # -- Name of the SecretStore or ClusterSecretStore to read from
+    name: "cluster-secret-store"
+    # -- Kind of the store: `ClusterSecretStore` or `SecretStore`
+    kind: "ClusterSecretStore"
+  redisPasswordSecret:
+    # -- Remote key holding the Redis password
+    key: ""
+    # -- Property inside the remote key, when the remote value is structured
+    property: ""
+  sentinelPasswordSecret:
+    # -- Remote key holding the Sentinel password
+    key: ""
+    # -- Property inside the remote key, when the remote value is structured
+    property: ""
+
+# =============================================================================
+# MASTER
+# =============================================================================
+master:
+  # -- Number of master pods, normally 1
+  count: 1
+
+  service:
+    # -- Master Service type
+    type: ClusterIP
+    # -- Master Service port
+    port: 6379
+    # -- Node port for the master Service, with type NodePort or LoadBalancer
+    nodePort: ""
+    # -- Annotations for the master Service
+    annotations: {}
+    # -- Load balancer IP for the master Service, with type LoadBalancer
+    loadBalancerIP: ""
+    # -- Source ranges allowed to reach the master load balancer
+    loadBalancerSourceRanges: []
+    # -- External traffic policy, with type NodePort or LoadBalancer
+    externalTrafficPolicy: Cluster
+    # -- Session affinity for the master Service
+    sessionAffinity: None
+    # -- Session affinity configuration for the master Service
+    sessionAffinityConfig: {}
+
+  # -- Resource requests and limits for the Redis container
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  livenessProbe:
+    # -- Enable the master liveness probe
+    enabled: true
+    # -- Delay before the first liveness check
+    initialDelaySeconds: 20
+    # -- Interval between liveness checks
+    periodSeconds: 5
+    # -- Liveness check timeout
+    timeoutSeconds: 5
+    # -- Successes needed to pass liveness
+    successThreshold: 1
+    # -- Failures tolerated before the container restarts
+    failureThreshold: 5
+
+  readinessProbe:
+    # -- Enable the master readiness probe. It is role aware: a master pod
+    # demoted by Sentinel fails readiness and leaves the master Service.
+    enabled: true
+    # -- Delay before the first readiness check
+    initialDelaySeconds: 20
+    # -- Interval between readiness checks
+    periodSeconds: 5
+    # -- Readiness check timeout
+    timeoutSeconds: 1
+    # -- Successes needed to pass readiness
+    successThreshold: 1
+    # -- Failures tolerated before the pod leaves the Service endpoints
+    failureThreshold: 5
+
+  startupProbe:
+    # -- Enable the master startup probe
+    enabled: false
+    # -- Delay before the first startup check
+    initialDelaySeconds: 0
+    # -- Interval between startup checks
+    periodSeconds: 10
+    # -- Startup check timeout
+    timeoutSeconds: 5
+    # -- Successes needed to pass startup
+    successThreshold: 1
+    # -- Failures tolerated before the container restarts
+    failureThreshold: 30
+
+  # -- Replaces the built in liveness probe entirely
+  customLivenessProbe: {}
+  # -- Replaces the built in readiness probe entirely
+  customReadinessProbe: {}
+  # -- Replaces the built in startup probe entirely
+  customStartupProbe: {}
+
+  persistence:
+    # -- Give the master a PersistentVolumeClaim. With false the data volume is an emptyDir.
+    enabled: true
+    # -- StorageClass for the master volume
+    storageClass: ""
+    # -- Access modes for the master volume
+    accessModes:
+      - ReadWriteOnce
+    # -- Size of the master volume
+    size: 8Gi
+    # -- Annotations on the master volume claim
+    annotations: {}
+    # -- Label selector for a pre-provisioned master volume
+    selector: {}
+    # -- Data source to clone the master volume from
+    dataSource: {}
+
+  podDisruptionBudget:
+    # -- Create a PodDisruptionBudget for the master
+    enabled: true
+    # -- Minimum available master pods during a voluntary disruption
+    minAvailable: 1
+    # -- Maximum unavailable master pods during a voluntary disruption
+    maxUnavailable: ""
+
+  # -- PriorityClass for the master pod
+  priorityClassName: ""
+  # -- Affinity rules for the master pod
+  affinity: {}
+  # -- Topology spread constraints for the master pod
+  topologySpreadConstraints: []
+  # -- Node selector for the master pod
+  nodeSelector: {}
+  # -- Tolerations for the master pod
+  tolerations: []
+  # -- Extra labels on the master StatefulSet and its pods
+  podLabels: {}
+  # -- Extra annotations on the master StatefulSet and its pods
+  podAnnotations: {}
+
+  podSecurityContext:
+    # -- Apply the master pod security context
+    enabled: true
+    # -- Volume ownership group for the master pod
+    fsGroup: 1001
+    # -- User the master pod runs as
+    runAsUser: 1001
+    # -- Refuse to start the master pod as root
+    runAsNonRoot: true
+    seccompProfile:
+      # -- Seccomp profile for the master pod
+      type: RuntimeDefault
+
+  containerSecurityContext:
+    # -- Apply the master container security context
+    enabled: true
+    # -- User the Redis container runs as
+    runAsUser: 1001
+    # -- Refuse to start the Redis container as root
+    runAsNonRoot: true
+    # -- Allow privilege escalation inside the Redis container
+    allowPrivilegeEscalation: false
+    # -- Mount the Redis container root filesystem read only
+    readOnlyRootFilesystem: true
+    capabilities:
+      # -- Linux capabilities dropped from the Redis container
+      drop:
+        - ALL
+
+  # -- Lifecycle hooks for the Redis container
+  lifecycleHooks: {}
+  # -- Extra environment variables for the Redis container
+  extraEnvVars: []
+  # -- Name of a ConfigMap with extra environment variables for the Redis container
+  extraEnvVarsCM: ""
+  # -- Name of a Secret with extra environment variables for the Redis container
+  extraEnvVarsSecret: ""
+  # -- Extra volumes on the master pod
+  extraVolumes: []
+  # -- Extra volume mounts on the Redis container
+  extraVolumeMounts: []
+  # -- Extra init containers on the master pod
+  initContainers: []
+  # -- Extra sidecar containers on the master pod
+  sidecars: []
+
+  watchdog:
+    # -- Run the watchdog sidecar. It watches the master role and asks Sentinel
+    # to hand the role back when this pod has been demoted, so the master
+    # Service keeps pointing at a pod that accepts writes. Sentinel only.
+    enabled: true
+    # -- Seconds between role checks
+    intervalSeconds: 30
+    # -- Seconds the watchdog waits after requesting a failover
+    cooldownSeconds: 60
+
+  # -- Replaces the master start command entirely
+  command: []
+
+# =============================================================================
+# REPLICAS (architecture: replication)
+# =============================================================================
+replica:
+  # -- Number of replica pods
+  replicaCount: 2
+
+  service:
+    # -- Replica Service type
+    type: ClusterIP
+    # -- Replica Service port
+    port: 6379
+    # -- Node port for the replica Service, with type NodePort or LoadBalancer
+    nodePort: ""
+    # -- Annotations for the replica Service
+    annotations: {}
+    # -- Labels for the replica Service
+    labels: {}
+    # -- Load balancer IP for the replica Service, with type LoadBalancer
+    loadBalancerIP: ""
+    # -- Source ranges allowed to reach the replica load balancer
+    loadBalancerSourceRanges: []
+    # -- External traffic policy, with type NodePort or LoadBalancer
+    externalTrafficPolicy: Cluster
+    # -- Session affinity for the replica Service
+    sessionAffinity: None
+    # -- Session affinity configuration for the replica Service
+    sessionAffinityConfig: {}
+
+  # -- Resource requests and limits for each replica container
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  livenessProbe:
+    # -- Enable the replica liveness probe
+    enabled: true
+    # -- Delay before the first liveness check
+    initialDelaySeconds: 20
+    # -- Interval between liveness checks
+    periodSeconds: 5
+    # -- Liveness check timeout
+    timeoutSeconds: 5
+    # -- Successes needed to pass liveness
+    successThreshold: 1
+    # -- Failures tolerated before the container restarts
+    failureThreshold: 5
+
+  readinessProbe:
+    # -- Enable the replica readiness probe. It also checks that replication to
+    # the current master is up.
+    enabled: true
+    # -- Delay before the first readiness check
+    initialDelaySeconds: 20
+    # -- Interval between readiness checks
+    periodSeconds: 5
+    # -- Readiness check timeout
+    timeoutSeconds: 1
+    # -- Successes needed to pass readiness
+    successThreshold: 1
+    # -- Failures tolerated before the pod leaves the Service endpoints
+    failureThreshold: 5
+
+  startupProbe:
+    # -- Enable the replica startup probe
+    enabled: false
+    # -- Delay before the first startup check
+    initialDelaySeconds: 0
+    # -- Interval between startup checks
+    periodSeconds: 10
+    # -- Startup check timeout
+    timeoutSeconds: 5
+    # -- Successes needed to pass startup
+    successThreshold: 1
+    # -- Failures tolerated before the container restarts
+    failureThreshold: 30
+
+  # -- Replaces the built in liveness probe entirely
+  customLivenessProbe: {}
+  # -- Replaces the built in readiness probe entirely
+  customReadinessProbe: {}
+  # -- Replaces the built in startup probe entirely
+  customStartupProbe: {}
+
+  persistence:
+    # -- Give each replica a PersistentVolumeClaim
+    enabled: true
+    # -- StorageClass for the replica volumes
+    storageClass: ""
+    # -- Access modes for the replica volumes
+    accessModes:
+      - ReadWriteOnce
+    # -- Size of each replica volume
+    size: 8Gi
+    # -- Annotations on the replica volume claims
+    annotations: {}
+    # -- Label selector for pre-provisioned replica volumes
+    selector: {}
+    # -- Data source to clone the replica volumes from
+    dataSource: {}
+
+  podDisruptionBudget:
+    # -- Create a PodDisruptionBudget for the replicas
+    enabled: true
+    # -- Minimum available replica pods during a voluntary disruption
+    minAvailable: 1
+    # -- Maximum unavailable replica pods during a voluntary disruption
+    maxUnavailable: ""
+
+  # -- PriorityClass for the replica pods
+  priorityClassName: ""
+  # -- Affinity rules for the replica pods
+  affinity: {}
+  # -- Topology spread constraints for the replica pods
+  topologySpreadConstraints: []
+  # -- Node selector for the replica pods
+  nodeSelector: {}
+  # -- Tolerations for the replica pods
+  tolerations: []
+  # -- Extra labels on the replica StatefulSet and its pods
+  podLabels: {}
+  # -- Extra annotations on the replica StatefulSet and its pods
+  podAnnotations: {}
+
+  podSecurityContext:
+    # -- Apply the replica pod security context
+    enabled: true
+    # -- Volume ownership group for the replica pods
+    fsGroup: 1001
+    # -- User the replica pods run as
+    runAsUser: 1001
+    # -- Refuse to start a replica pod as root
+    runAsNonRoot: true
+    seccompProfile:
+      # -- Seccomp profile for the replica pods
+      type: RuntimeDefault
+
+  containerSecurityContext:
+    # -- Apply the replica container security context
+    enabled: true
+    # -- User the replica containers run as
+    runAsUser: 1001
+    # -- Refuse to start a replica container as root
+    runAsNonRoot: true
+    # -- Allow privilege escalation inside the replica containers
+    allowPrivilegeEscalation: false
+    # -- Mount the replica container root filesystem read only
+    readOnlyRootFilesystem: true
+    capabilities:
+      # -- Linux capabilities dropped from the replica containers
+      drop:
+        - ALL
+
+  # -- Lifecycle hooks for the replica containers
+  lifecycleHooks: {}
+  # -- Extra environment variables for the replica containers
+  extraEnvVars: []
+  # -- Name of a ConfigMap with extra environment variables for the replica containers
+  extraEnvVarsCM: ""
+  # -- Name of a Secret with extra environment variables for the replica containers
+  extraEnvVarsSecret: ""
+  # -- Extra volumes on the replica pods
+  extraVolumes: []
+  # -- Extra volume mounts on the replica containers
+  extraVolumeMounts: []
+  # -- Extra init containers on the replica pods
+  initContainers: []
+  # -- Extra sidecar containers on the replica pods
+  sidecars: []
+  # -- Replaces the replica start command entirely
+  command: []
+
+# =============================================================================
+# SENTINEL (high availability, requires architecture: replication)
+# =============================================================================
+sentinel:
+  # -- Run Sentinel and let it fail the master over to a replica
+  enabled: false
+
+  image:
+    # -- Sentinel image registry
+    registry: docker.io
+    # -- Sentinel image repository
+    repository: redis
+    # -- Sentinel image tag
+    tag: 7.4.2-alpine
+    # -- Sentinel image pull policy
+    pullPolicy: IfNotPresent
+
+  # -- Logical name Sentinel uses for the monitored master
+  masterSet: mymaster
+  # -- Sentinels that must agree the master is unreachable before a failover starts
+  quorum: 2
+  # -- Number of Sentinel pods, 3 or more for a reliable quorum
+  replicaCount: 3
+  # -- Milliseconds of silence before Sentinel calls the master down
+  downAfterMilliseconds: 30000
+  # -- Milliseconds a failover may take before Sentinel starts over
+  failoverTimeout: 180000
+  # -- Replicas re-synchronised in parallel with the new master
+  parallelSyncs: 1
+
+  service:
+    # -- Sentinel Service type
+    type: ClusterIP
+    # -- Sentinel Service port
+    port: 26379
+    nodePorts:
+      # -- Node port for the Sentinel Service, with type NodePort or LoadBalancer
+      sentinel: ""
+    # -- Annotations for the Sentinel Service
+    annotations: {}
+    # -- Labels for the Sentinel Service
+    labels: {}
+    # -- Load balancer IP for the Sentinel Service, with type LoadBalancer
+    loadBalancerIP: ""
+    # -- Source ranges allowed to reach the Sentinel load balancer
+    loadBalancerSourceRanges: []
+    # -- External traffic policy, with type LoadBalancer
+    externalTrafficPolicy: Cluster
+    # -- Session affinity for the Sentinel Service
+    sessionAffinity: None
+
+  # -- Resource requests and limits for each Sentinel container
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  livenessProbe:
+    # -- Enable the Sentinel liveness probe
+    enabled: true
+    # -- Delay before the first liveness check
+    initialDelaySeconds: 20
+    # -- Interval between liveness checks
+    periodSeconds: 10
+    # -- Liveness check timeout
+    timeoutSeconds: 5
+    # -- Successes needed to pass liveness
+    successThreshold: 1
+    # -- Failures tolerated before the container restarts
+    failureThreshold: 6
+
+  readinessProbe:
+    # -- Enable the Sentinel readiness probe. It also checks that Sentinel knows
+    # the current master.
+    enabled: true
+    # -- Delay before the first readiness check
+    initialDelaySeconds: 20
+    # -- Interval between readiness checks
+    periodSeconds: 5
+    # -- Readiness check timeout
+    timeoutSeconds: 1
+    # -- Successes needed to pass readiness
+    successThreshold: 1
+    # -- Failures tolerated before the pod leaves the Service endpoints
+    failureThreshold: 6
+
+  startupProbe:
+    # -- Enable the Sentinel startup probe
+    enabled: false
+    # -- Delay before the first startup check
+    initialDelaySeconds: 0
+    # -- Interval between startup checks
+    periodSeconds: 10
+    # -- Startup check timeout
+    timeoutSeconds: 5
+    # -- Successes needed to pass startup
+    successThreshold: 1
+    # -- Failures tolerated before the container restarts
+    failureThreshold: 30
+
+  # -- Replaces the built in liveness probe entirely
+  customLivenessProbe: {}
+  # -- Replaces the built in readiness probe entirely
+  customReadinessProbe: {}
+  # -- Replaces the built in startup probe entirely
+  customStartupProbe: {}
+
+  persistence:
+    # -- Give each Sentinel a PersistentVolumeClaim so its view of the current
+    # master survives a restart. Recommended wherever pods are rescheduled often.
+    enabled: false
+    # -- StorageClass for the Sentinel volumes
+    storageClass: ""
+    # -- Access modes for the Sentinel volumes
+    accessModes:
+      - ReadWriteOnce
+    # -- Size of each Sentinel volume
+    size: 100Mi
+
+  podDisruptionBudget:
+    # -- Create a PodDisruptionBudget for the Sentinels
+    enabled: true
+    # -- Minimum available Sentinel pods, keep the quorum during a node drain
+    minAvailable: 2
+
+  # -- PriorityClass for the Sentinel pods
+  priorityClassName: ""
+  # -- Affinity rules for the Sentinel pods
+  affinity: {}
+  # -- Topology spread constraints for the Sentinel pods
+  topologySpreadConstraints: []
+  # -- Node selector for the Sentinel pods
+  nodeSelector: {}
+  # -- Tolerations for the Sentinel pods
+  tolerations: []
+  # -- Extra labels on the Sentinel StatefulSet and its pods
+  podLabels: {}
+  # -- Extra annotations on the Sentinel StatefulSet and its pods
+  podAnnotations: {}
+
+  podSecurityContext:
+    # -- Apply the Sentinel pod security context
+    enabled: true
+    # -- Volume ownership group for the Sentinel pods
+    fsGroup: 1001
+    # -- User the Sentinel pods run as
+    runAsUser: 1001
+    # -- Refuse to start a Sentinel pod as root
+    runAsNonRoot: true
+    seccompProfile:
+      # -- Seccomp profile for the Sentinel pods
+      type: RuntimeDefault
+
+  containerSecurityContext:
+    # -- Apply the Sentinel container security context
+    enabled: true
+    # -- User the Sentinel containers run as
+    runAsUser: 1001
+    # -- Refuse to start a Sentinel container as root
+    runAsNonRoot: true
+    # -- Allow privilege escalation inside the Sentinel containers
+    allowPrivilegeEscalation: false
+    # -- Mount the Sentinel container root filesystem read only. Sentinel
+    # rewrites its own config file, so set this to false when the config lives
+    # outside a writable volume.
+    readOnlyRootFilesystem: true
+    capabilities:
+      # -- Linux capabilities dropped from the Sentinel containers
+      drop:
+        - ALL
+
+  # -- Lifecycle hooks for the Sentinel containers
+  lifecycleHooks: {}
+  # -- Extra environment variables for the Sentinel containers
+  extraEnvVars: []
+  # -- Name of a ConfigMap with extra environment variables for the Sentinel containers
+  extraEnvVarsCM: ""
+  # -- Name of a Secret with extra environment variables for the Sentinel containers
+  extraEnvVarsSecret: ""
+  # -- Extra volumes on the Sentinel pods
+  extraVolumes: []
+  # -- Extra volume mounts on the Sentinel containers
+  extraVolumeMounts: []
+  # -- Replaces the Sentinel start command entirely
+  command: []
+
+# =============================================================================
+# REDIS SERVER CONFIGURATION (redis.conf)
+# =============================================================================
+# Rendered into a ConfigMap and mounted at /opt/redis/redis.conf. Set
+# configuration.custom to replace the whole file, or override single keys.
+# Reference: https://redis.io/docs/latest/operate/oss_and_stack/management/config/
+configuration:
+  # -- Render the generated redis.conf. With false the file is left empty.
+  enabled: true
+  # -- Full redis.conf content. When set, every key below is ignored.
+  custom: ""
+
+  # -- Accept connections from outside localhost
+  protected-mode: "no"
+  # -- Pending connection backlog
+  tcp-backlog: 511
+  # -- Seconds before an idle client is closed, 0 disables
+  timeout: 0
+  # -- TCP keepalive interval in seconds
+  tcp-keepalive: 300
+
+  # -- Run Redis in the background, always no inside a container
+  daemonize: "no"
+  # -- Path of the pid file
+  pidfile: "/var/run/redis.pid"
+  # -- Log level
+  loglevel: notice
+  # -- Number of logical databases
+  databases: 16
+
+  # -- RDB snapshot rules, empty disables snapshots
+  save: "900 1 300 10 60 10000"
+  # -- Refuse writes when the last background save failed
+  stop-writes-on-bgsave-error: "yes"
+  # -- Compress RDB files
+  rdbcompression: "yes"
+  # -- Checksum RDB files
+  rdbchecksum: "yes"
+  # -- Name of the RDB file
+  dbfilename: "dump.rdb"
+  # -- Working directory, also where the RDB and AOF files live
+  dir: "/data"
+
+  # -- Serve reads from a replica whose link to the master is down
+  replica-serve-stale-data: "yes"
+  # -- Refuse writes sent directly to a replica
+  replica-read-only: "yes"
+  # -- Send the replication stream straight to the socket instead of a disk file
+  repl-diskless-sync: "no"
+  # -- Seconds to wait for more replicas before a diskless sync starts
+  repl-diskless-sync-delay: 5
+  # -- Disable TCP_NODELAY on the replication link
+  repl-disable-tcp-nodelay: "no"
+  # -- Promotion preference, lower wins. The chart manages this per pod.
+  replica-priority: 100
+  # -- Replicas that must be connected before the master accepts writes
+  min-replicas-to-write: ""
+  # -- Seconds of replica lag tolerated by min-replicas-to-write
+  min-replicas-max-lag: ""
+
+  # -- Memory ceiling, for example 384mb. Empty means no limit.
+  maxmemory: ""
+  # -- Eviction policy once maxmemory is reached
+  maxmemory-policy: "noeviction"
+  # -- Keys sampled per eviction decision
+  maxmemory-samples: 5
+
+  # -- Free evicted values in a background thread
+  lazyfree-lazy-eviction: "no"
+  # -- Free expired values in a background thread
+  lazyfree-lazy-expire: "no"
+  # -- Free values replaced by a write in a background thread
+  lazyfree-lazy-server-del: "no"
+  # -- Flush a replica dataset in a background thread on full resync
+  replica-lazy-flush: "no"
+
+  # -- Enable the append only file
+  appendonly: "no"
+  # -- Name of the append only file
+  appendfilename: "appendonly.aof"
+  # -- How often the append only file is flushed to disk
+  appendfsync: "everysec"
+  # -- Skip fsync while a rewrite is running
+  no-appendfsync-on-rewrite: "no"
+  # -- Growth percentage that triggers an append only file rewrite
+  auto-aof-rewrite-percentage: 100
+  # -- Minimum append only file size before a rewrite is considered
+  auto-aof-rewrite-min-size: "64mb"
+  # -- Load a truncated append only file instead of refusing to start
+  aof-load-truncated: "yes"
+  # -- Write an RDB preamble at the head of the append only file
+  aof-use-rdb-preamble: "yes"
+
+  # -- Milliseconds a Lua script may run before it can be killed
+  lua-time-limit: 5000
+
+  # -- Microseconds above which a command is logged as slow
+  slowlog-log-slower-than: 10000
+  # -- Entries kept in the slow log
+  slowlog-max-len: 128
+
+  # -- Milliseconds above which an event is recorded by the latency monitor, 0 disables
+  latency-monitor-threshold: 0
+
+  # -- Keyspace notification classes, empty disables notifications
+  notify-keyspace-events: ""
+
+  # -- Hash entries kept in the compact encoding
+  hash-max-ziplist-entries: 512
+  # -- Hash value size kept in the compact encoding
+  hash-max-ziplist-value: 64
+  # -- List node sizing for the compact encoding
+  list-max-ziplist-size: -2
+  # -- List nodes left uncompressed at each end
+  list-compress-depth: 0
+  # -- Integer set entries kept in the compact encoding
+  set-max-intset-entries: 512
+  # -- Sorted set entries kept in the compact encoding
+  zset-max-ziplist-entries: 128
+  # -- Sorted set value size kept in the compact encoding
+  zset-max-ziplist-value: 64
+  # -- Bytes below which a HyperLogLog uses the sparse encoding
+  hll-sparse-max-bytes: 3000
+  # -- Bytes per stream radix tree node
+  stream-node-max-bytes: 4096
+  # -- Entries per stream radix tree node
+  stream-node-max-entries: 100
+
+  # -- Enable active defragmentation
+  activedefrag: "no"
+  # -- Fragmentation bytes below which defragmentation stays off
+  active-defrag-ignore-bytes: "100mb"
+  # -- Fragmentation percentage that starts defragmentation
+  active-defrag-threshold-lower: 10
+  # -- Fragmentation percentage at which defragmentation runs at full effort
+  active-defrag-threshold-upper: 100
+  # -- Minimum CPU percentage spent on defragmentation
+  active-defrag-cycle-min: 1
+  # -- Maximum CPU percentage spent on defragmentation
+  active-defrag-cycle-max: 25
+  # -- Fields scanned per defragmentation cycle
+  active-defrag-max-scan-fields: 1000
+
+# -- Name of a ConfigMap holding your own redis.conf. When set, the chart
+# renders no configuration ConfigMap of its own.
+existingConfigmap: ""
+
+# =============================================================================
+# SERVICE ACCOUNT
+# =============================================================================
+serviceAccount:
+  # -- Create a ServiceAccount for the Redis pods
+  create: true
+  # -- Name of the ServiceAccount, generated from the release when empty
+  name: ""
+  # -- Annotations on the ServiceAccount
+  annotations: {}
+  # -- Mount the ServiceAccount token in the pods. Redis needs no API access.
+  automountServiceAccountToken: false
+
+# =============================================================================
+# METRICS
+# =============================================================================
+metrics:
+  # -- Run a Redis exporter sidecar next to the master and every replica
+  enabled: false
+
+  image:
+    # -- Exporter image registry
+    registry: docker.io
+    # -- Exporter image repository
+    repository: oliver006/redis_exporter
+    # -- Exporter image tag
+    tag: v1.62.0-alpine
+    # -- Exporter image pull policy
+    pullPolicy: IfNotPresent
+
+  # -- Resource requests and limits for the exporter container
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+  # -- Port the exporter listens on and the Services expose
+  port: 9121
+  # -- Extra command line arguments for the exporter
+  extraArgs: []
+
+  serviceMonitor:
+    # -- Create a ServiceMonitor. Needs the Prometheus Operator CRDs.
+    enabled: false
+    # -- Namespace for the ServiceMonitor, defaults to the release namespace
+    namespace: ""
+    # -- Scrape interval
+    interval: 30s
+    # -- Scrape timeout
+    scrapeTimeout: 10s
+    # -- Extra labels so your Prometheus selects this ServiceMonitor
+    labels: {}
+    # -- Keep the labels the exporter sets on conflict
+    honorLabels: true
+    # -- Relabeling rules applied before the scrape
+    relabelings: []
+    # -- Relabeling rules applied to the scraped metrics
+    metricRelabelings: []
+
+# =============================================================================
+# NETWORK POLICY
+# =============================================================================
+networkPolicy:
+  # -- Create a NetworkPolicy for the Redis pods
+  enabled: false
+  # -- Allow ingress from every pod in the cluster
+  allowExternal: true
+  # -- Extra ingress rules appended to the policy
+  ingressRules: []
+  # -- Egress rules for the policy
+  egressRules: []
+  # -- Namespace labels allowed to reach Redis
+  ingressNSMatchLabels: {}
+  # -- Pod labels, inside the allowed namespaces, allowed to reach Redis
+  ingressNSPodMatchLabels: {}
+
+# =============================================================================
+# VOLUME PERMISSIONS INIT CONTAINER
+# =============================================================================
+volumePermissions:
+  # -- Run an init container that chowns the data volume. Needed on storage
+  # that ignores fsGroup.
+  enabled: false
+
+  image:
+    # -- Init container image registry
+    registry: docker.io
+    # -- Init container image repository
+    repository: alpine
+    # -- Init container image tag
+    tag: "3.19"
+    # -- Init container image pull policy
+    pullPolicy: IfNotPresent
+
+  # -- Resource requests and limits for the init container
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 50m
+      memory: 32Mi
+
+# =============================================================================
+# SYSCTL INIT CONTAINER
+# =============================================================================
+sysctl:
+  # -- Run a privileged init container that sets kernel parameters
+  enabled: false
+
+  image:
+    # -- Init container image registry
+    registry: docker.io
+    # -- Init container image repository
+    repository: alpine
+    # -- Init container image tag
+    tag: "3.19"
+    # -- Init container image pull policy
+    pullPolicy: IfNotPresent
+
+  # -- Kernel parameters to set, for example `net.core.somaxconn: 10000`
+  sysctls: {}
+
+  # -- Resource requests and limits for the init container
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 50m
+      memory: 32Mi

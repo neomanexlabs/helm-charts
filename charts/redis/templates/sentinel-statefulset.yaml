@@ -1,0 +1,256 @@
+{{- if and (eq .Values.architecture "replication") .Values.sentinel.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "redis.sentinel.statefulsetName" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels: {{- include "redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sentinel
+    {{- if .Values.sentinel.podLabels }}
+    {{- toYaml .Values.sentinel.podLabels | nindent 4 }}
+    {{- end }}
+  {{- if .Values.sentinel.podAnnotations }}
+  annotations: {{- toYaml .Values.sentinel.podAnnotations | nindent 4 }}
+  {{- end }}
+spec:
+  serviceName: {{ include "redis.headless.serviceName" . }}
+  replicas: {{ .Values.sentinel.replicaCount }}
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels: {{- include "redis.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sentinel
+  template:
+    metadata:
+      labels: {{- include "redis.labels" . | nindent 8 }}
+        app.kubernetes.io/component: sentinel
+        {{- if .Values.sentinel.podLabels }}
+        {{- toYaml .Values.sentinel.podLabels | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-sentinel.yaml") . | sha256sum }}
+        checksum/scripts: {{ include (print $.Template.BasePath "/scripts-configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- if .Values.sentinel.podAnnotations }}
+        {{- toYaml .Values.sentinel.podAnnotations | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "redis.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "redis.serviceAccountName" . }}
+      {{- if .Values.sentinel.priorityClassName }}
+      priorityClassName: {{ .Values.sentinel.priorityClassName | quote }}
+      {{- end }}
+      {{- if .Values.sentinel.affinity }}
+      affinity: {{- toYaml .Values.sentinel.affinity | nindent 8 }}
+      {{- else }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: {{- include "redis.selectorLabels" . | nindent 18 }}
+                  app.kubernetes.io/component: sentinel
+              topologyKey: kubernetes.io/hostname
+      {{- end }}
+      {{- if .Values.sentinel.nodeSelector }}
+      nodeSelector: {{- toYaml .Values.sentinel.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.sentinel.tolerations }}
+      tolerations: {{- toYaml .Values.sentinel.tolerations | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sentinel.topologySpreadConstraints }}
+      topologySpreadConstraints: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.sentinel.podSecurityContext.enabled }}
+      securityContext: {{- omit .Values.sentinel.podSecurityContext "enabled" | toYaml | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: sentinel
+          image: {{ include "redis.sentinel.image" . }}
+          imagePullPolicy: {{ .Values.sentinel.image.pullPolicy }}
+          {{- if .Values.sentinel.containerSecurityContext.enabled }}
+          securityContext: {{- omit .Values.sentinel.containerSecurityContext "enabled" | toYaml | nindent 12 }}
+          {{- end }}
+          {{- if .Values.sentinel.command }}
+          command: {{- toYaml .Values.sentinel.command | nindent 12 }}
+          {{- else }}
+          command:
+            - /bin/sh
+            - /opt/redis/scripts/start-sentinel.sh
+          {{- end }}
+          env:
+            - name: REDIS_SENTINEL_MODE
+              value: "true"
+            {{- if .Values.sentinel.extraEnvVars }}
+            {{- toYaml .Values.sentinel.extraEnvVars | nindent 12 }}
+            {{- end }}
+          {{- if or .Values.sentinel.extraEnvVarsCM .Values.sentinel.extraEnvVarsSecret }}
+          envFrom:
+            {{- if .Values.sentinel.extraEnvVarsCM }}
+            - configMapRef:
+                name: {{ .Values.sentinel.extraEnvVarsCM }}
+            {{- end }}
+            {{- if .Values.sentinel.extraEnvVarsSecret }}
+            - secretRef:
+                name: {{ .Values.sentinel.extraEnvVarsSecret }}
+            {{- end }}
+          {{- end }}
+          ports:
+            - name: sentinel
+              containerPort: {{ include "redis.sentinel.containerPort" . }}
+              protocol: TCP
+          {{- if .Values.sentinel.livenessProbe.enabled }}
+          livenessProbe:
+            {{- if .Values.sentinel.customLivenessProbe }}
+            {{- toYaml .Values.sentinel.customLivenessProbe | nindent 12 }}
+            {{- else }}
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  {{- if and (include "redis.auth.enabled" .) .Values.auth.sentinel }}
+                  redis-cli -p 26379 -a "$( cat /opt/redis/password/redis-sentinel-password )" ping | grep -q PONG
+                  {{- else }}
+                  redis-cli -p 26379 ping | grep -q PONG
+                  {{- end }}
+            initialDelaySeconds: {{ .Values.sentinel.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.sentinel.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.sentinel.livenessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.sentinel.livenessProbe.successThreshold }}
+            failureThreshold: {{ .Values.sentinel.livenessProbe.failureThreshold }}
+            {{- end }}
+          {{- end }}
+          {{- if .Values.sentinel.readinessProbe.enabled }}
+          readinessProbe:
+            {{- if .Values.sentinel.customReadinessProbe }}
+            {{- toYaml .Values.sentinel.customReadinessProbe | nindent 12 }}
+            {{- else }}
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  {{- if and (include "redis.auth.enabled" .) .Values.auth.sentinel }}
+                  SENTINEL_PASSWORD="$( cat /opt/redis/password/redis-sentinel-password )"
+                  response=$(redis-cli -p 26379 -a "${SENTINEL_PASSWORD}" ping 2>/dev/null)
+                  {{- else }}
+                  response=$(redis-cli -p 26379 ping 2>/dev/null)
+                  {{- end }}
+
+                  if [ "$response" != "PONG" ]; then
+                    echo "Sentinel not responding to PING"
+                    exit 1
+                  fi
+
+                  # Check if Sentinel knows about the master
+                  {{- if and (include "redis.auth.enabled" .) .Values.auth.sentinel }}
+                  master_info=$(redis-cli -p 26379 -a "${SENTINEL_PASSWORD}" sentinel master {{ .Values.sentinel.masterSet }} 2>/dev/null)
+                  {{- else }}
+                  master_info=$(redis-cli -p 26379 sentinel master {{ .Values.sentinel.masterSet }} 2>/dev/null)
+                  {{- end }}
+
+                  if [ -z "$master_info" ]; then
+                    echo "Sentinel doesn't know about master"
+                    exit 1
+                  fi
+
+                  exit 0
+            initialDelaySeconds: {{ .Values.sentinel.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.sentinel.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.sentinel.readinessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.sentinel.readinessProbe.successThreshold }}
+            failureThreshold: {{ .Values.sentinel.readinessProbe.failureThreshold }}
+            {{- end }}
+          {{- end }}
+          {{- if .Values.sentinel.startupProbe.enabled }}
+          startupProbe:
+            {{- if .Values.sentinel.customStartupProbe }}
+            {{- toYaml .Values.sentinel.customStartupProbe | nindent 12 }}
+            {{- else }}
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  {{- if and (include "redis.auth.enabled" .) .Values.auth.sentinel }}
+                  redis-cli -p 26379 -a "$( cat /opt/redis/password/redis-sentinel-password )" ping | grep -q PONG
+                  {{- else }}
+                  redis-cli -p 26379 ping | grep -q PONG
+                  {{- end }}
+            initialDelaySeconds: {{ .Values.sentinel.startupProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.sentinel.startupProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.sentinel.startupProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.sentinel.startupProbe.successThreshold }}
+            failureThreshold: {{ .Values.sentinel.startupProbe.failureThreshold }}
+            {{- end }}
+          {{- end }}
+          resources: {{- toYaml .Values.sentinel.resources | nindent 12 }}
+          {{- if .Values.sentinel.lifecycleHooks }}
+          lifecycle: {{- toYaml .Values.sentinel.lifecycleHooks | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: sentinel-config
+              mountPath: /opt/redis/sentinel.conf
+              subPath: sentinel.conf
+            - name: scripts
+              mountPath: /opt/redis/scripts
+              readOnly: true
+            {{- if (include "redis.auth.enabled" .) }}
+            - name: redis-password
+              mountPath: /opt/redis/password
+              readOnly: true
+            {{- end }}
+            {{- if .Values.sentinel.extraVolumeMounts }}
+            {{- toYaml .Values.sentinel.extraVolumeMounts | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: sentinel-config
+          configMap:
+            name: {{ include "redis.sentinel.configmapName" . }}
+            defaultMode: 0644
+        - name: scripts
+          configMap:
+            name: {{ include "redis.scripts.configmapName" . }}
+            defaultMode: 0755
+        {{- if (include "redis.auth.enabled" .) }}
+        - name: redis-password
+          secret:
+            secretName: {{ include "redis.secretName" . }}
+            items:
+              - key: {{ include "redis.secretPasswordKey" . }}
+                path: redis-password
+              {{- if .Values.auth.sentinel }}
+              - key: {{ include "redis.secretSentinelPasswordKey" . }}
+                path: redis-sentinel-password
+              {{- end }}
+            defaultMode: 0400
+        {{- end }}
+        {{- if .Values.sentinel.extraVolumes }}
+        {{- toYaml .Values.sentinel.extraVolumes | nindent 8 }}
+        {{- end }}
+  {{- if .Values.sentinel.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        {{- if .Values.sentinel.persistence.annotations }}
+        annotations: {{- toYaml .Values.sentinel.persistence.annotations | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          {{- range .Values.sentinel.persistence.accessModes }}
+          - {{ . | quote }}
+          {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.sentinel.persistence.size | quote }}
+        {{- if .Values.sentinel.persistence.storageClass }}
+        storageClassName: {{ .Values.sentinel.persistence.storageClass | quote }}
+        {{- end }}
+  {{- else }}
+        - name: data
+          emptyDir: {}
+  {{- end }}
+{{- end }}
