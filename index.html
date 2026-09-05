@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neomanex Helm Charts</title>
+<meta name="description" content="Public Helm charts published by Neomanex: the OpenCode AI coding agent on Kubernetes, one workspace per git repository.">
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0 auto; padding: 2rem 1.25rem 4rem; max-width: 46rem;
+         font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 1rem; }
+  h2 { font-size: 1.2rem; margin: 2.25rem 0 .6rem; }
+  pre { padding: .9rem 1rem; overflow-x: auto; border-radius: 6px;
+        background: rgba(127,127,127,.14); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid rgba(127,127,127,.3); }
+  ul { padding-left: 1.2rem; }
+</style>
+</head>
+<body>
+
+<h1>Neomanex Helm Charts</h1>
+
+<p>
+Public Helm charts published by <a href="https://neomanex.com">Neomanex</a>, an AI-native company
+that runs its own operations on AI agents and publishes the infrastructure underneath them.
+These are the charts we run in production ourselves, not demo material. This URL is the Helm
+chart repository index; the source lives on
+<a href="https://github.com/neomanexlabs/helm-charts">GitHub</a>.
+</p>
+
+<h2>Charts</h2>
+
+<table>
+  <tr><th>Chart</th><th>Description</th></tr>
+  <tr>
+    <td><a href="https://github.com/neomanexlabs/helm-charts/tree/main/charts/opencode">opencode</a></td>
+    <td>Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet, one persistent workspace per git repository.</td>
+  </tr>
+</table>
+
+<h2>Install</h2>
+
+<p>From this chart repository:</p>
+
+<pre><code>helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
+helm repo update
+helm install opencode neomanexlabs/opencode</code></pre>
+
+<p>Or directly from the OCI registry:</p>
+
+<pre><code>helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode</code></pre>
+
+<p>Both install paths serve the identical package, built once per release.</p>
+
+<h2>About Neomanex</h2>
+
+<p>
+Neomanex is an AI-native company. We run our own business on an AI Operating Model,
+publish the evidence, and help other companies become AI native: agents, operations,
+and the infrastructure underneath them, built and governed in production.
+</p>
+
+<p>This project is part of that work. It is the same code we run ourselves.</p>
+
+<ul>
+  <li>Website: <a href="https://neomanex.com">https://neomanex.com</a></li>
+  <li>Work with us: <a href="https://neomanex.com/contact">https://neomanex.com/contact</a></li>
+  <li>Products: <a href="https://convops.app">ConvOps</a> (AI-first operations) and
+      <a href="https://gnosari.com">Gnosari</a> (AI agents for your business)</li>
+</ul>
+
+</body>
+</html>
