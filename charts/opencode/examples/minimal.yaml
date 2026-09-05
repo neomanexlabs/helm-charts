@@ -9,8 +9,10 @@
 # Render it:
 #   helm template t charts/opencode -f charts/opencode/examples/minimal.yaml
 #
-# Installing it needs the SSH key Secret to exist first (see the chart README,
-# "Requirements"): the git-init init container mounts it unconditionally.
+# Install it (the workspace repository must be reachable over https without
+# credentials, since no SSH key is mounted in this mode), then port-forward
+# the workspace Service to reach the UI:
+#   helm install opencode charts/opencode -f charts/opencode/examples/minimal.yaml
 
 externalSecrets:
   enabled: false

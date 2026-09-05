@@ -1,4 +1,4 @@
-# Chart pull-request gate: lint, render, docs sync, scrub.
+# Chart pull-request gate: lint, render, docs sync, identifier check.
 #
 # Runs on every pull request that touches charts/, and on main so a merge that
 # skipped review is still checked. Nothing here publishes anything.
@@ -84,15 +84,15 @@ jobs:
             exit 1
           fi
 
-      - name: Scrub gate
+      - name: Identifier check
         run: |
           set -euo pipefail
           # Pattern list lives here, in the gate, not in a file the scrub could
           # miss (open-source-publishing.md section 9). render-check.sh is the
           # one exclusion: it carries these same literals because it runs the
           # identical check locally.
-          if grep -rniE "neomanex-base|scale-rentals|scale-intelligence|conveyor-prod|content-os@|opencode@neomanex.com" charts/ --exclude=render-check.sh; then
-            echo "::error::internal identifiers found in charts/ (hits above)"
+          if grep -rniE "pkg\.dev|gcr\.io|gitlab\.com|@neomanex\.com" charts/ --exclude=render-check.sh; then
+            echo "::error::deployment-specific identifiers found in charts/ (hits above)"
             exit 1
           fi
-          echo "scrub gate clean"
+          echo "identifier check clean"

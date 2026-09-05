@@ -1,4 +1,4 @@
-# Fixture for task content-os-mcp-tool-whitelist. NOT used in any deploy.
+# Fixture for the per-workspace tools rendering check. NOT used in any deploy.
 # Exercises the per-workspace tools-filter rendering in templates/configmap.yaml:
 # global config.tools (optional) deep-copied then mergeOverwrite'd with
 # per-workspace $ws.tools (optional) -- workspace key wins per key -- and the

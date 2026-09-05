@@ -3,7 +3,7 @@ name: opencode
 description: Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet, one persistent workspace per git repository, with per-workspace config, MCP servers and git sync.
 
 type: application
-version: 1.4.0
+version: 1.4.1
 appVersion: "1.14.48"
 
 keywords:

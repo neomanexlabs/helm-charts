@@ -14,7 +14,7 @@ Chart name.
 
 {{/*
 Fullname based on release name.
-When release is "opencode-prod" and chart is "opencode", this yields "opencode-prod".
+When release is "opencode-team" and chart is "opencode", this yields "opencode-team".
 This becomes the Service DNS name that clients connect to.
 */}}
 {{- define "opencode.fullname" -}}

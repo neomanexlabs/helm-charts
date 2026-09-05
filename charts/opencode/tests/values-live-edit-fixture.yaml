@@ -1,4 +1,4 @@
-# Fixture for the live-edit chart verification (task opencode-live-edit-preview).
+# Fixture for the live-edit chart verification.
 # NOT used in any deploy. Exercises the four live-edit chart features:
 #   1. rbac.exposeRole -> Role/RoleBinding <release>-expose
 #   2. networkPolicy.additionalPorts -> extra allowed ingress ports (dev server :3000)

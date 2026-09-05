@@ -4,13 +4,13 @@ Runs the [OpenCode](https://github.com/anomalyco/opencode) AI coding agent as a 
 
 ```sh
 helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
-helm install opencode neomanexlabs/opencode --version 1.4.0 -f my-values.yaml
+helm install opencode neomanexlabs/opencode --version 1.4.1 -f my-values.yaml
 ```
 
 Or as an OCI artifact:
 
 ```sh
-helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.0 -f my-values.yaml
+helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.1 -f my-values.yaml
 ```
 
 ## Requirements
@@ -18,13 +18,13 @@ helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.0
 | Requirement | Detail |
 |-------------|--------|
 | Kubernetes | 1.25 or newer, with a default StorageClass that supports dynamic provisioning (each workspace gets a PersistentVolumeClaim) |
-| [External Secrets Operator](https://external-secrets.io) | Required for any working install. The chart delivers the git SSH key and the provider API keys through ESO, and the git-init init container mounts the SSH key secret unconditionally. See "Secrets and the ESO requirement" below |
+| [External Secrets Operator](https://external-secrets.io) | Required for any authenticated install: the git SSH deploy key, the provider API keys and the server password are all delivered through ESO. With `externalSecrets.enabled: false` the chart installs without it, but only for public repositories cloned over https and without provider keys. See "Secrets and the ESO requirement" below |
 | Ingress controller | Optional. `ingress.enabled` and `ingressApi.enabled` are off by default; without them the service is reachable through a port-forward or from inside the cluster |
 | Container image | `ghcr.io/neomanexlabs/opencode` by default. Any image with `git`, `openssh-client` and a shell works; set `image.repository` and `image.tag` to use your own |
 
 ## Quick start
 
-[`examples/minimal.yaml`](examples/minimal.yaml) is the smallest set of values that produces a complete render: one workspace pointing at a public repository, no External Secrets Operator, no ingress, no server password.
+[`examples/minimal.yaml`](examples/minimal.yaml) is the smallest set of values that installs: one workspace pointing at a public repository, no External Secrets Operator, no ingress, no server password. It is unauthenticated and meant for a port-forward on a cluster you control.
 
 ```sh
 helm template opencode neomanexlabs/opencode -f examples/minimal.yaml
@@ -34,12 +34,14 @@ Read that render before installing anything. It is deliberately unauthenticated 
 
 ### Secrets and the ESO requirement
 
-`examples/minimal.yaml` renders, but it does not install as-is. With `externalSecrets.enabled: false` the chart declares no `ssh-key` volume while the git-init init container still mounts one, so the API server rejects the StatefulSet. A real install therefore needs External Secrets Operator installed in the cluster and `externalSecrets.enabled: true`, with a `ClusterSecretStore` named `gcp-secret-manager` backing the two ExternalSecret resources the chart creates:
+Every credential the chart handles is delivered by [External Secrets Operator](https://external-secrets.io) from a `ClusterSecretStore` named `gcp-secret-manager`, through two ExternalSecret resources the chart creates when `externalSecrets.enabled` is true:
 
 - `externalSecrets.sshKey` becomes the `opencode-ssh-key` Secret, key `id_ed25519`, the deploy key used to clone and push every workspace repository.
 - `externalSecrets.secrets` becomes the `opencode-secrets` Secret, mounted at `/etc/opencode/secrets/` and referenced from `config.provider` through OpenCode's `{file:/etc/opencode/secrets/<key>}` substitution. It also carries `server-password` when `server.passwordAuth.enabled` is on.
 
-A secrets mode that does not depend on External Secrets Operator is not implemented yet. Open an issue if you need one.
+With `externalSecrets.enabled: false` nothing secret is mounted: no SSH key, no provider keys, no server password. The workspaces still install and clone, provided every repository is reachable over https without credentials, and the server answers anyone who can reach it. That mode is for trying the chart, not for running it.
+
+A secrets mode that reads plain Kubernetes Secrets you create yourself, without External Secrets Operator, is not implemented yet. Open an issue if you need one.
 
 ## How it works
 
@@ -50,6 +52,10 @@ Each entry in `workspaces` becomes its own StatefulSet, Service, ConfigMap and P
 The chart labels every workspace-scoped object with `opencode.neomanex.com/workspace: <name>`, and that key is part of the StatefulSet selector. Kubernetes makes selectors immutable, so this key will not be renamed inside a major version: changing it would require deleting and recreating every StatefulSet. Treat `opencode.neomanex.com/*` as the chart's reserved label namespace and do not set those keys yourself.
 
 ## Upgrading
+
+### 1.4.0 to 1.4.1
+
+No values changes. With `externalSecrets.enabled: false` the chart now renders an installable StatefulSet (the SSH key mount, the key copy and `GIT_SSH_COMMAND` are only rendered when ESO delivers a key). Installs with ESO on render identically to 1.4.0.
 
 ### 1.3 to 1.4
 
@@ -82,7 +88,7 @@ The chart labels every workspace-scoped object with `opencode.neomanex.com/works
 | config.providers | object | `{}` | Provider API key configuration. Each entry becomes a provider block in opencode.json. The apiKey is always rendered as a {file:} substitution against /etc/opencode/secrets/<secretKey>.  Built-in providers (resolved from OpenCode's models.dev catalog) need only secretKey:   providers:     anthropic:       secretKey: anthropic-api-key     deepseek:       secretKey: deepseek-api-key  Custom providers NOT in models.dev (e.g. z.ai) additionally need npm, options.baseURL, and an explicit models map:   providers:     zai:       secretKey: zai-api-key       npm: "@ai-sdk/anthropic"          # or @ai-sdk/openai-compatible       options:         baseURL: https://api.z.ai/api/anthropic       models:         glm-4.6:           name: GLM-4.6 |
 | config.share | string | `nil` | Session share mode for opencode.json (e.g., "disabled", "manual", "auto"). Omit (empty) to use the built-in default. "disabled" suits headless deploys. share: disabled |
 | config.smallModel | string | `""` | Model for lightweight tasks (titles, summaries, compaction). Same format as model. If empty, inherits from model or built-in default. |
-| config.tools | object | `{}` | Global MCP tool exposure glob map. Keys are "<server>_<tool>" (exact) or "<server>*" (glob), values are bool; a specific key beats a broader glob on the same server (e.g. {"rally-dev*": false, "rally-dev_post_get": true} exposes only post_get from rally-dev). Filters which MCP tool schemas reach the model, the mechanism behind per-workspace token-cost control. Merged with each workspace's own `tools` map (workspace key wins per key, see the `workspaces` example). NOT rendered as opencode.json's own "tools" key: opencode lets a catch-all `permission: {"*": allow}` defeat a tools-map deny (last matching rule wins and the catch-all sorts after), so the chart folds these entries into the rendered `permission` object as allow/deny rules instead. Byte-wise JSON key order ("*" < "srv*" < "srv_tool") makes last-match resolve catch-all < deny-glob < allow-specific. Nothing is rendered when neither this map nor any workspace's map nor config.permission is set (today's behavior: every connected server exposes all its tools). Builtin write/edit/patch belong in config.permission directly, never here. Example:   tools:     "playwright*": false |
+| config.tools | object | `{}` | Global MCP tool exposure glob map. Keys are "<server>_<tool>" (exact) or "<server>*" (glob), values are bool; a specific key beats a broader glob on the same server (e.g. {"github*": false, "github_get_issue": true} exposes only get_issue from github). Filters which MCP tool schemas reach the model, the mechanism behind per-workspace token-cost control. Merged with each workspace's own `tools` map (workspace key wins per key, see the `workspaces` example). NOT rendered as opencode.json's own "tools" key: opencode lets a catch-all `permission: {"*": allow}` defeat a tools-map deny (last matching rule wins and the catch-all sorts after), so the chart folds these entries into the rendered `permission` object as allow/deny rules instead. Byte-wise JSON key order ("*" < "srv*" < "srv_tool") makes last-match resolve catch-all < deny-glob < allow-specific. Nothing is rendered when neither this map nor any workspace's map nor config.permission is set (today's behavior: every connected server exposes all its tools). Builtin write/edit/patch belong in config.permission directly, never here. Example:   tools:     "playwright*": false |
 | cronJobs.gitSync.enabled | bool | `false` | Enable periodic git pull CronJob |
 | cronJobs.gitSync.image | string | `"bitnami/kubectl:latest"` | kubectl image for exec |
 | cronJobs.gitSync.schedule | string | `"0 */6 * * *"` | Cron schedule (default: every 6 hours) |
@@ -112,7 +118,7 @@ The chart labels every workspace-scoped object with `opencode.neomanex.com/works
 | ingress.tls | object | `{"enabled":false,"secretName":""}` | TLS configuration |
 | nameOverride | string | `""` | Override chart name (used in resource names) |
 | networkPolicy.additionalPorts | list | `[]` | Extra ingress ports allowed in addition to server.port (e.g. [3000] for a live-edit dev server running inside the pod). |
-| networkPolicy.allowedNamespaces | list | `[]` | Namespaces allowed to reach OpenCode pods Example: [my-app-prod, my-app-sessions] |
+| networkPolicy.allowedNamespaces | list | `[]` | Namespaces allowed to reach OpenCode pods Example: [my-app, my-app-sessions] |
 | networkPolicy.enabled | bool | `false` | Enable NetworkPolicy restricting ingress |
 | podSecurityContext | object | `{"fsGroup":1000,"runAsGroup":1000,"runAsUser":1000,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level security context |
 | rbac.clusterReader | bool | `false` | Bind the SA to an existing cluster-wide reader ClusterRole |
@@ -148,4 +154,4 @@ This project is part of that work. It is the same code we run ourselves.
 
 - Website: https://neomanex.com
 - Work with us: https://neomanex.com/contact
-- Products: [ConvOps](https://convops.app) (AI-first operations) and [Gnosari](https://gnosari.com) (AI agents for your business)
+- Products: [ConvOps](https://convops.app) (AI-first operations) and [Gnosari](https://gnosari.com) (conversational data collection: AI agents that turn conversations into structured data)

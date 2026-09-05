@@ -50,8 +50,10 @@ spec:
           env:
             - name: HOME
               value: /root
+            {{- if $.Values.externalSecrets.enabled }}
             - name: GIT_SSH_COMMAND
               value: "ssh -i /tmp/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+            {{- end }}
           command:
             - /bin/sh
             - -c
@@ -62,10 +64,12 @@ spec:
               # default umask 0022 would make .git files 644-root (group can't
               # write) and breaks the flywheel + the agent's own git pull.
               umask 0002
+              {{- if $.Values.externalSecrets.enabled }}
               # Copy SSH key to writable location (secret mount is read-only)
               mkdir -p /tmp/.ssh
               cp /mnt/ssh-key/id_ed25519 /tmp/.ssh/id_ed25519
               chmod 600 /tmp/.ssh/id_ed25519
+              {{- end }}
               git config --global user.name {{ $.Values.git.user.name | quote }}
               git config --global user.email {{ $.Values.git.user.email | quote }}
               git config --global --add safe.directory /workspace/{{ $ws.name }}
@@ -134,9 +138,11 @@ spec:
               chmod -R g+w /workspace/{{ $ws.name }} 2>/dev/null || true
               echo "Workspace {{ $ws.name }} ready."
           volumeMounts:
+            {{- if $.Values.externalSecrets.enabled }}
             - name: ssh-key
               mountPath: /mnt/ssh-key
               readOnly: true
+            {{- end }}
             - name: workspace-{{ $ws.name }}
               mountPath: /workspace/{{ $ws.name }}
       # ================================================================
@@ -194,8 +200,10 @@ spec:
                   key: gitlab-token
             {{- end }}
             {{- end }}
+            {{- if $.Values.externalSecrets.enabled }}
             - name: GIT_SSH_COMMAND
               value: "ssh -i /home/opencode/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+            {{- end }}
             # !! NEVER set HOSTNAME env var !!
             # It collides with the Linux kernel hostname. The listen address
             # is controlled via the --hostname flag in the command below.

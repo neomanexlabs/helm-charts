@@ -6,7 +6,7 @@ Public Helm charts published by [Neomanex](https://neomanex.com), an AI-native c
 
 | Chart | Version | Description |
 |-------|---------|-------------|
-| [opencode](charts/opencode) | 1.4.0 | Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet, one persistent workspace per git repository. |
+| [opencode](charts/opencode) | 1.4.1 | Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet, one persistent workspace per git repository. |
 
 ## Install
 
@@ -15,13 +15,13 @@ From the chart repository:
 ```sh
 helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
 helm repo update
-helm install opencode neomanexlabs/opencode --version 1.4.0
+helm install opencode neomanexlabs/opencode --version 1.4.1
 ```
 
 Or directly from the OCI registry:
 
 ```sh
-helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.0
+helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.1
 ```
 
 Both install paths serve the identical package, built once per release.
@@ -40,4 +40,4 @@ This project is part of that work. It is the same code we run ourselves.
 
 - Website: https://neomanex.com
 - Work with us: https://neomanex.com/contact
-- Products: [ConvOps](https://convops.app) (AI-first operations) and [Gnosari](https://gnosari.com) (AI agents for your business)
+- Products: [ConvOps](https://convops.app) (AI-first operations) and [Gnosari](https://gnosari.com) (conversational data collection: AI agents that turn conversations into structured data)

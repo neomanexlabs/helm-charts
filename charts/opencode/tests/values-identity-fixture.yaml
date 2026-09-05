@@ -1,5 +1,5 @@
 # Fixture for the git-identity / autosave-identity chart verification
-# (open-source scrub work). NOT used in any deploy. Exercises:
+# NOT used in any deploy. Exercises:
 #   1. git.user.name / git.user.email -> rendered in BOTH the git-init
 #      initContainer script and the runtime container start command, so no
 #      identity is hardcoded in the templates

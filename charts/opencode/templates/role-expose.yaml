@@ -15,7 +15,7 @@ scoping to the release namespace and to pods/services/ingresses only.
 Bound to the chart ServiceAccount. Named `<release>-expose` (for every real
 release the release name contains the chart name, so this matches the
 `opencode.fullname`-based naming of the other chart objects, e.g.
-`opencode-prod-expose`). Toggle with `rbac.exposeRole: true` in values. Off by
+`opencode-team-expose`). Toggle with `rbac.exposeRole: true` in values. Off by
 default.
 */}}
 {{- if .Values.rbac.exposeRole }}

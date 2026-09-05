@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# render-check.sh — template-level verification for the opencode chart's
-# live-edit features (task opencode-live-edit-preview) and per-workspace
-# tools rendering (task web-app-mcp-tool-whitelist).
+# render-check.sh — template-level verification for the opencode chart:
+# live-edit features, per-workspace tools rendering, git identity, autosave,
+# the ESO-less minimal example, and the published-content identifier check.
 #
 # Renders the chart and asserts:
 #   A. DEFAULT values (toggles off)   -> none of the new objects/flags render
@@ -18,16 +18,23 @@
 #      git.user.name / git.user.email and renders in BOTH the git-init
 #      initContainer script and the runtime container command; the DEFAULT
 #      render (one workspace, no identity values) carries no hardcoded
-#      opencode@neomanex.com anywhere (open-source scrub, FR-2).
+#      commit identity anywhere.
 #   F. tests/values-identity-fixture.yaml -> per-workspace
 #      gitSync.autosave: {enabled, paths, userName, userEmail} renders the
 #      git-sync CronJob autosave block with the workspace identity and paths;
 #      the legacy gitSync.push: true alias still renders one, falling back to
 #      git.user.*; a workspace with neither renders no autosave block.
-#   G. scrub gate (FR-2): no internal registry / customer / system / identity
-#      literal anywhere in the chart directory (tests/ excluded). The label key
-#      opencode.neomanex.com/workspace is the sanctioned exception and is
-#      deliberately NOT matched by the pattern.
+#   H. examples/minimal.yaml (externalSecrets.enabled: false) -> the
+#      StatefulSet is installable: every volumeMount name in every container
+#      resolves to a declared volume or volumeClaimTemplate, the git-init
+#      script does not copy an SSH key that was never mounted, and neither
+#      container carries a GIT_SSH_COMMAND pointing at a key that does not
+#      exist. With ESO ON (identity fixture) the ssh-key mount, the copy and
+#      GIT_SSH_COMMAND all still render.
+#   G. identifier check: no private registry, private git host, in-cluster
+#      service address, deployment-specific release name or mailbox anywhere
+#      in the chart directory. The label key opencode.neomanex.com/workspace
+#      is the chart's reserved label namespace and is deliberately NOT matched.
 #
 # Usage: tests/render-check.sh   (from the chart root, or pass the chart dir)
 set -euo pipefail
@@ -233,7 +240,7 @@ printf '%s' "$IDENT_RUNTIME" | grep -qF 'git config --global user.email "bot@exa
 
 # Defaults (one workspace, no git.user.* set) must carry no baked-in identity.
 ! grep -q 'opencode@neomanex.com' "$TMP/default-ws.yaml" \
-  || fail "defaults: hardcoded opencode@neomanex.com identity rendered (FR-2 scrub)"
+  || fail "defaults: a hardcoded commit identity rendered"
 
 echo "PASS: render-check (git identity templated from git.user.* in both scripts, no hardcoded default)"
 
@@ -276,18 +283,46 @@ printf '%s' "$PLAIN_CRON" | grep -q 'autosave' \
 
 echo "PASS: render-check (autosave identity/paths from values, legacy push alias, opt-out clean)"
 
-# --- G. scrub gate (FR-2): no internal identifiers in the published chart ----
-# Pattern list is inline (open-source-publishing.md §9: keep it in the gate,
-# not in a file the scrub could miss). Only THIS script is excluded, because it
-# necessarily carries the pattern literals it searches for; the fixtures under
-# tests/ ARE scanned and are written generically for exactly that reason. The
-# label key opencode.neomanex.com/workspace is the sanctioned brand reference
-# and is NOT matched by this pattern -- keep it that way.
-SCRUB_PATTERN='neomanex-base|scale-rentals|scale-intelligence|conveyor-prod|content-os@|opencode@neomanex.com'
-SCRUB_HITS="$(grep -rniE "$SCRUB_PATTERN" "$CHART_DIR" --exclude=render-check.sh || true)"
-if [ -n "$SCRUB_HITS" ]; then
-  echo "$SCRUB_HITS" >&2
-  fail "scrub gate: internal identifiers present in the chart (see hits above)"
+# --- H. minimal example (ESO off) is installable ----------------------------
+MINIMAL="$CHART_DIR/examples/minimal.yaml"
+helm template t "$CHART_DIR" -f "$MINIMAL" > "$TMP/minimal.yaml"
+MIN_STS="$(extract_sts_doc "$TMP/minimal.yaml" demo)"
+[ -n "$MIN_STS" ] || fail "minimal: demo StatefulSet doc not found"
+# Every mounted volume name must be declared (volumes: or volumeClaimTemplates)
+MIN_DECLARED="$(printf '%s' "$MIN_STS" | awk '/^      volumes:/{f=1} /^  volumeClaimTemplates:/{f=1} f && /^        - name: /{print $3} f && /^        name: /{print $2}' | sort -u)"
+MIN_MOUNTED="$(printf '%s' "$MIN_STS" | awk '/volumeMounts:/{f=1;next} f && /^ *- name: /{print $3;next} f && !/^ *(mountPath|subPath|readOnly):/{f=0}' | sort -u)"
+for v in $MIN_MOUNTED; do
+  printf '%s\n' "$MIN_DECLARED" | grep -qx "$v" \
+    || fail "minimal: volumeMount '$v' has no matching volume (StatefulSet would be rejected by the API server)"
+done
+MIN_INIT="$(printf '%s' "$MIN_STS" | extract_sts_init)"
+! printf '%s' "$MIN_INIT" | grep -q '/mnt/ssh-key' \
+  || fail "minimal: git-init still copies /mnt/ssh-key with externalSecrets.enabled: false"
+! printf '%s' "$MIN_STS" | grep -q 'GIT_SSH_COMMAND' \
+  || fail "minimal: GIT_SSH_COMMAND rendered without an SSH key"
+# ESO on: the SSH path still renders in full
+helm template t "$CHART_DIR" -f "$MINIMAL" --set externalSecrets.enabled=true > "$TMP/minimal-eso.yaml"
+ESO_STS="$(extract_sts_doc "$TMP/minimal-eso.yaml" demo)"
+[ -n "$ESO_STS" ] || fail "minimal (ESO on): demo StatefulSet doc not found"
+[ "$(printf '%s' "$ESO_STS" | extract_sts_init | grep -c '/mnt/ssh-key')" -ge 2 ] \
+  || fail "minimal (ESO on): git-init lost the ssh-key mount or copy"
+[ "$(printf '%s' "$ESO_STS" | grep -c 'GIT_SSH_COMMAND')" -eq 2 ] \
+  || fail "minimal (ESO on): GIT_SSH_COMMAND must render in both containers"
+
+echo "PASS: render-check (minimal example installable without ESO; SSH path intact with ESO)"
+
+# --- G. identifier check: nothing deployment-specific in the published chart --
+# The pattern is generic by design (registry hosts, private git hosts,
+# mailboxes); it names no
+# specific deployment. Only THIS script is excluded, because it carries the
+# pattern; the fixtures under tests/ ARE scanned and are written generically
+# for exactly that reason. The label key opencode.neomanex.com/workspace is
+# the chart's reserved label namespace and is NOT matched -- keep it that way.
+IDENT_PATTERN='pkg\.dev|gcr\.io|gitlab\.com|@neomanex\.com'
+IDENT_HITS="$(grep -rniE "$IDENT_PATTERN" "$CHART_DIR" --exclude=render-check.sh || true)"
+if [ -n "$IDENT_HITS" ]; then
+  echo "$IDENT_HITS" >&2
+  fail "identifier check: deployment-specific identifiers present in the chart (see hits above)"
 fi
 
-echo "PASS: render-check (scrub gate clean)"
+echo "PASS: render-check (identifier check clean)"
