@@ -1,5 +1,7 @@
-# Chart release: GitHub Release + Pages index (chart-releaser), then the same
-# package pushed to GHCR as an OCI artifact.
+# Chart release: GitHub Release + Pages index (chart-releaser), then the SAME
+# package file pushed to GHCR as an OCI artifact. The chart is packaged once,
+# by chart-releaser; the OCI push reuses that .tgz byte for byte, so the
+# release asset and the OCI layer carry the same checksum.
 #
 # A chart edit that reaches main without a Chart.yaml version bump fails at the
 # version-collision guard, on purpose: a published version is immutable because
@@ -73,15 +75,20 @@ jobs:
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Package and push to GHCR
+      # chart-releaser leaves its packages in .cr-release-packages; push those
+      # exact files. Never run helm package a second time here.
+      - name: Push the released package to GHCR
         run: |
           set -euo pipefail
-          rm -rf .cr-oci-packages
-          mkdir -p .cr-oci-packages
           for chart in charts/*/; do
             name="$(helm show chart "$chart" | awk '$1 == "name:" { print $2; exit }')"
             version="$(helm show chart "$chart" | awk '$1 == "version:" { print $2; exit }')"
-            helm package "$chart" -d .cr-oci-packages
-            helm push ".cr-oci-packages/${name}-${version}.tgz" "$OCI_REGISTRY"
-            echo "pushed ${name} ${version} to ${OCI_REGISTRY}"
+            pkg=".cr-release-packages/${name}-${version}.tgz"
+            if [ ! -f "$pkg" ]; then
+              echo "::error::$pkg not found: chart-releaser did not package ${name} ${version}"
+              exit 1
+            fi
+            echo "sha256 $(sha256sum "$pkg")"
+            helm push "$pkg" "$OCI_REGISTRY"
+            echo "pushed ${name} ${version} to ${OCI_REGISTRY} from ${pkg}"
           done

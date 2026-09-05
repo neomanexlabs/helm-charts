@@ -1,7 +1,10 @@
 # chart-releaser configuration.
 # Packages every bumped chart under charts/, creates a GitHub Release per
 # chart version with the .tgz attached, and updates index.yaml on gh-pages.
+# The release body is the chart's RELEASE_NOTES.md (read from inside the
+# package), written by hand for every version: what changed, why, upgrade
+# notes. It is never auto-generated.
 owner: neomanexlabs
 git-repo: helm-charts
 release-name-template: "{{ .Name }}-{{ .Version }}"
-generate-release-notes: true
+release-notes-file: RELEASE_NOTES.md
