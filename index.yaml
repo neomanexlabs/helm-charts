@@ -159,4 +159,64 @@ entries:
     urls:
     - https://github.com/neomanexlabs/helm-charts/releases/download/opencode-1.4.0/opencode-1.4.0.tgz
     version: 1.4.0
-generated: "2026-09-05T10:19:08.822391639Z"
+  redis:
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: added
+          description: External Secrets Operator settings are declared in values, so the chart installs with defaults on a cluster that has neither the operator nor a Prometheus Operator
+        - kind: added
+          description: Passwords are generated on first install and reused on upgrade when none is supplied, so no well known credential ships as a default
+        - kind: added
+          description: Topology spread constraints render on the master, replica and Sentinel workloads
+        - kind: changed
+          description: The Sentinel bootstrap waits for every replica instead of a fixed pair
+        - kind: removed
+          description: Values that no template rendered are gone, so the values reference lists only what the chart implements
+      artifacthub.io/images: |
+        - name: redis
+          image: redis:7.4.2-alpine
+        - name: redis-exporter
+          image: oliver006/redis_exporter:v1.62.0-alpine
+      artifacthub.io/license: MIT
+      artifacthub.io/links: |
+        - name: Website
+          url: https://neomanex.com
+        - name: Contact
+          url: https://neomanex.com/contact
+        - name: ConvOps
+          url: https://convops.app
+        - name: Gnosari
+          url: https://gnosari.com
+        - name: Source
+          url: https://github.com/neomanexlabs/helm-charts
+        - name: Redis documentation
+          url: https://redis.io/docs/latest/
+    apiVersion: v2
+    appVersion: 7.4.2
+    created: "2026-09-05T15:37:04.751192953Z"
+    description: Runs Redis on Kubernetes with Sentinel high availability, automatic
+      failback of the master role, and role-aware readiness so the master Service
+      always points at a node that accepts writes.
+    digest: bbf67a07b590f1a4575c49ec53a8bbb4d837748f27628b118b5577115fa4a88a
+    home: https://neomanex.com
+    keywords:
+    - redis
+    - sentinel
+    - high-availability
+    - failover
+    - cache
+    - key-value
+    - kubernetes
+    - helm
+    maintainers:
+    - name: Neomanex
+      url: https://neomanex.com/contact
+    name: redis
+    sources:
+    - https://github.com/neomanexlabs/helm-charts
+    - https://github.com/redis/redis
+    type: application
+    urls:
+    - https://github.com/neomanexlabs/helm-charts/releases/download/redis-1.1.0/redis-1.1.0.tgz
+    version: 1.1.0
+generated: "2026-09-05T15:37:04.751211437Z"
