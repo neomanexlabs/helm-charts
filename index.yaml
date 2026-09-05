@@ -4,6 +4,48 @@ entries:
   - annotations:
       artifacthub.io/changes: |
         - kind: changed
+          description: Template comments use plain punctuation and explain themselves without pointing at any external document
+        - kind: added
+          description: The pull-request gate rejects em dashes and external documentation references anywhere in the chart
+      artifacthub.io/links: |
+        - name: Website
+          url: https://neomanex.com
+        - name: Contact
+          url: https://neomanex.com/contact
+        - name: Product
+          url: https://convops.app
+        - name: Source
+          url: https://github.com/neomanexlabs/helm-charts
+    apiVersion: v2
+    appVersion: 1.14.48
+    created: "2026-09-05T10:19:08.822372653Z"
+    description: Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet,
+      one persistent workspace per git repository, with per-workspace config, MCP
+      servers and git sync.
+    digest: 7be37cf80e827aee7768eece57768d2eba0e64c6f60756197a4e0a1c5630a99f
+    home: https://neomanex.com
+    keywords:
+    - opencode
+    - ai-coding-agent
+    - kubernetes
+    - helm
+    - statefulset
+    - mcp
+    - ai-agents
+    maintainers:
+    - name: Neomanex
+      url: https://neomanex.com/contact
+    name: opencode
+    sources:
+    - https://github.com/neomanexlabs/helm-charts
+    - https://github.com/anomalyco/opencode
+    type: application
+    urls:
+    - https://github.com/neomanexlabs/helm-charts/releases/download/opencode-1.4.3/opencode-1.4.3.tgz
+    version: 1.4.3
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: changed
           description: The GitHub Release asset and the OCI artifact are the same package file, pushed once
         - kind: added
           description: Hand-written release notes ship with every version (RELEASE_NOTES.md in the package)
@@ -117,4 +159,4 @@ entries:
     urls:
     - https://github.com/neomanexlabs/helm-charts/releases/download/opencode-1.4.0/opencode-1.4.0.tgz
     version: 1.4.0
-generated: "2026-09-05T10:12:37.966706513Z"
+generated: "2026-09-05T10:19:08.822391639Z"
