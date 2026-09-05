@@ -7,6 +7,7 @@ Public Helm charts published by [Neomanex](https://neomanex.com), an AI-native c
 | Chart | Version | Description |
 |-------|---------|-------------|
 | [opencode](charts/opencode) | 1.4.3 | Runs the OpenCode AI coding agent on Kubernetes as a StatefulSet, one persistent workspace per git repository. |
+| [redis](charts/redis) | 1.1.0 | Runs Redis on Kubernetes with Sentinel high availability, automatic failback of the master role and role-aware readiness. |
 
 ## Install
 

@@ -1,0 +1,95 @@
+{{- /*
+Source template for README.md. Hand-written prose lives here; the values
+reference is generated from values.yaml comments by helm-docs.
+
+  helm-docs --chart-search-root charts
+
+CI runs `helm-docs --check` (lint-test.yml), so an edit to values.yaml or to
+this template that is not regenerated fails the pull request.
+*/ -}}
+# Redis Helm Chart
+
+Runs [Redis](https://redis.io) on Kubernetes with Sentinel high availability: one master, N replicas, and a Sentinel quorum that promotes a replica when the master stops answering. What sets it apart is what happens next. The master pod reclaims its role once it is healthy again, readiness is role aware so a demoted pod leaves the master Service, and Sentinel keeps its view of the cluster across restarts. It is for teams who want a Sentinel setup that converges back to a known topology without an operator watching it. It is published by [Neomanex](https://neomanex.com), an AI-native company, and it is the chart we run our own production Redis on.
+
+```sh
+helm install redis oci://ghcr.io/neomanexlabs/charts/redis --version {{ .Version }} -f my-values.yaml
+```
+
+## Add the repository
+
+```sh
+helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
+helm repo update
+helm install redis neomanexlabs/redis --version {{ .Version }} -f my-values.yaml
+```
+
+Both install paths serve the identical package.
+
+## Requirements
+
+| Requirement | Detail |
+|-------------|--------|
+| Kubernetes | 1.25 or newer, with a default StorageClass that supports dynamic provisioning when persistence is enabled |
+| External Secrets Operator | Optional. With `externalSecrets.enabled: false` (the default) the chart manages its own Secret. Turn it on to have the passwords delivered from an external store |
+| Prometheus Operator | Optional, and only for `metrics.serviceMonitor.enabled`. The exporter sidecar itself needs nothing |
+| Container image | `redis:7.4.2-alpine` by default. Any Redis image with `redis-cli`, `redis-sentinel` and a shell works |
+
+## Quick start
+
+[`examples/minimal.yaml`](examples/minimal.yaml) installs a single standalone instance. [`examples/ha-sentinel.yaml`](examples/ha-sentinel.yaml) installs the high availability topology: one master, two replicas, three Sentinels, the metrics exporter, and a configuration that refuses writes while no replica is connected.
+
+```sh
+helm template redis neomanexlabs/redis -f examples/ha-sentinel.yaml
+```
+
+Read the render before installing. Both examples carry placeholder passwords; replace them, or leave `auth.password` empty and let the chart generate one.
+
+### Passwords
+
+With `auth.enabled: true` and no `auth.password` and no `auth.existingSecret`, the chart generates a 32 character password on the first install and reuses it on every upgrade: it reads the Secret it created last time rather than rotating a credential the running pods still authenticate with. Set `auth.password` to choose your own, or set `auth.existingSecret` to a Secret you manage and the chart renders no Secret at all.
+
+## How it works
+
+The master runs as its own StatefulSet, the replicas as another, and Sentinel as a third. Four behaviours are worth knowing:
+
+- **Automatic failback.** After a failover, the master pod starts as a replica, waits for replication to catch up, and then asks Sentinel to hand the master role back. A watchdog sidecar (`master.watchdog`) repeats that check while the pod runs, so a demotion after boot is corrected too.
+- **Role-aware readiness.** The readiness probe checks the Redis role, not just a PING. A master pod that has been demoted fails readiness and leaves the master Service endpoints, so clients are never routed to a node that cannot accept writes. A replica must also have its replication link up.
+- **Persisted Sentinel state.** With `sentinel.persistence.enabled` each Sentinel keeps its config file on a volume, so a restarted quorum still knows which node is master. Without it, a simultaneous restart of every Sentinel loses that knowledge.
+- **Split-brain guard.** `configuration.min-replicas-to-write` and `min-replicas-max-lag` make the master refuse writes once no replica is acknowledging, so a partitioned master cannot accept writes that the failover would discard. The high availability example sets both.
+
+## Examples
+
+| File | What it installs |
+|------|------------------|
+| [`examples/minimal.yaml`](examples/minimal.yaml) | One standalone Redis, persistence on, no Sentinel, no metrics |
+| [`examples/ha-sentinel.yaml`](examples/ha-sentinel.yaml) | One master, two replicas, three Sentinels, watchdog, metrics exporter, split-brain guard |
+
+## Not implemented
+
+These are deliberately absent rather than half-wired, so the values reference below lists nothing that does nothing:
+
+| Not implemented | Detail |
+|-----------------|--------|
+| TLS | Redis is not configured to serve or verify TLS. Terminate elsewhere, or open an issue |
+| Redis Cluster mode | `architecture` accepts `standalone` and `replication` only. Any other value fails the render instead of installing a release with no Redis in it |
+| Scheduled backups | Persistence and RDB or AOF settings are exposed; nothing copies snapshots off the cluster |
+
+If you need one of these, open an issue and say how you would use it. That is more useful than a values key that renders nothing.
+
+{{ template "chart.valuesSection" . }}
+
+## Support
+
+Issues are the support channel: https://github.com/neomanexlabs/helm-charts/issues. For anything else, including security reports, use https://neomanex.com/contact.
+
+## About Neomanex
+
+Neomanex is an AI-native company. We run our own business on an AI Operating Model,
+publish the evidence, and help other companies become AI native: agents, operations,
+and the infrastructure underneath them, built and governed in production.
+
+This project is part of that work. It is the same code we run ourselves.
+
+- Website: https://neomanex.com
+- Work with us: https://neomanex.com/contact
+- Products: [ConvOps](https://convops.app) (AI-first operations) and [Gnosari](https://gnosari.com) (conversational data collection: AI agents that turn conversations into structured data)
