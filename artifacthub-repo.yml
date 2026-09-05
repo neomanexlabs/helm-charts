@@ -1,8 +1,8 @@
 # Artifact Hub repository metadata.
 # Placed at the root of the branch Artifact Hub scans (gh-pages, published by
-# chart-releaser). Filled in with repositoryID after the repository is
-# registered at https://artifacthub.io (Control panel -> Add repository).
-repositoryID: ""
+# chart-releaser). repositoryID is the id Artifact Hub assigned at
+# registration; it lets Artifact Hub verify the publisher.
+repositoryID: 4730e162-9a2a-4870-820c-9757fac8e6f8
 owners:
   # Artifact Hub matches an owner by the email of a registered Artifact Hub
   # account. No public email is published for this account, so the field is
