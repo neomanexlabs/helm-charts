@@ -1,17 +1,32 @@
 # OpenCode Helm Chart
 
-Runs the [OpenCode](https://github.com/anomalyco/opencode) AI coding agent as a long-lived server on Kubernetes: one StatefulSet per git repository, each with its own persistent volume, its own checkout kept fresh by a git-sync CronJob, its own MCP servers declared in values, and provider API keys delivered as file-mounted secrets managed by the External Secrets Operator. It is for platform and infrastructure teams who want coding agents that live next to their clusters instead of on laptops. It is published by [Neomanex](https://neomanex.com), an AI-native company, and it is the chart we run our own agent fleet on.
+Runs the [OpenCode](https://github.com/anomalyco/opencode) coding agent as a long-lived service in your own Kubernetes cluster instead of on a laptop. `opencode serve` carries the web UI and the HTTP API on one port, so behind an ingress you open your agent in a browser from any machine, and the session keeps running after you close the laptop.
+
+One release runs many instances. Each entry in `workspaces` is a separate StatefulSet with its own repository checkout, storage, model providers, MCP servers and ingress, so every repository keeps a warm clone and its own configuration. Credentials come from your cluster secret store, and an instance can be granted scoped RBAC to operate the namespace it runs in.
+
+It is for platform and infrastructure teams who want coding agents living next to the systems those agents work on. It is published by [Neomanex](https://neomanex.com), an AI-native company, and it is the chart our own OpenCode instances run on in production.
 
 ```sh
 helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
-helm install opencode neomanexlabs/opencode --version 1.4.4 -f my-values.yaml
+helm install opencode neomanexlabs/opencode --version 1.4.5 -f my-values.yaml
 ```
 
 Or as an OCI artifact:
 
 ```sh
-helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.4 -f my-values.yaml
+helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.5 -f my-values.yaml
 ```
+
+## Why run it in a cluster
+
+| Property | What it means |
+|----------|---------------|
+| Reachable from anywhere | The web UI and the HTTP API are one server on one port, so an ingress makes the agent available from any browser, including a phone. Public exposure needs `server.cors` set to the UI's own origin, because the UI loads its JavaScript modules with the `crossorigin` attribute |
+| Humans and machines, separately | `ingress` is the browser host and `apiIngress` is a second host for machine clients, so an SSO gate in front of one does not lock the other out. OpenCode's own HTTP Basic auth is on by default |
+| Sessions outlive the laptop | Session history and tool output live on a PersistentVolumeClaim, so closing the browser does not end the work and a pod restart resumes instead of starting over |
+| A warm checkout per repository | Each workspace keeps its own clone instead of cloning per session, a git-sync CronJob keeps it current, and `gitSync.autosave` commits and pushes agent-written paths on a schedule |
+| Next to the systems it works on | The agent runs inside the cluster, so internal services and private registries are reachable without a hop from a laptop, and `rbac.clusterReader` or `rbac.exposeRole` let it read or expose workloads in its own namespace |
+| Credentials stay in the cluster | Provider API keys, the git deploy key and the server password come from your secret store through External Secrets Operator, never from a dotfile on a developer machine |
 
 ## Requirements
 
