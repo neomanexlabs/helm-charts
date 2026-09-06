@@ -4,6 +4,48 @@ entries:
   - annotations:
       artifacthub.io/changes: |
         - kind: changed
+          description: The chart description and README lead with what the chart is for, running the OpenCode web UI and HTTP API in a cluster so the agent is reachable from any browser
+        - kind: added
+          description: A section covering what running the agent in a cluster gives you, including the CORS setting a publicly exposed web UI needs
+      artifacthub.io/links: |
+        - name: Website
+          url: https://neomanex.com
+        - name: Contact
+          url: https://neomanex.com/contact
+        - name: Product
+          url: https://convops.app
+        - name: Source
+          url: https://github.com/neomanexlabs/helm-charts
+    apiVersion: v2
+    appVersion: 1.14.48
+    created: "2026-09-06T14:03:47.184241074Z"
+    description: Runs the OpenCode coding agent as a long-lived service in your cluster,
+      web UI and HTTP API behind your own ingress, one persistent workspace per git
+      repository, with per-workspace config, MCP servers and git sync.
+    digest: 6eaa1e32034c15b1d25242e419f082ac1ba08860aabe4c2c2e68f1d66e24fc6f
+    home: https://neomanex.com
+    keywords:
+    - opencode
+    - ai-coding-agent
+    - kubernetes
+    - helm
+    - statefulset
+    - mcp
+    - ai-agents
+    maintainers:
+    - name: Neomanex
+      url: https://neomanex.com/contact
+    name: opencode
+    sources:
+    - https://github.com/neomanexlabs/helm-charts
+    - https://github.com/anomalyco/opencode
+    type: application
+    urls:
+    - https://github.com/neomanexlabs/helm-charts/releases/download/opencode-1.4.5/opencode-1.4.5.tgz
+    version: 1.4.5
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: changed
           description: Template comments use plain punctuation and explain themselves without pointing at any external document
         - kind: added
           description: The pull-request gate rejects em dashes and external documentation references anywhere in the chart
@@ -261,4 +303,4 @@ entries:
     urls:
     - https://github.com/neomanexlabs/helm-charts/releases/download/redis-1.1.0/redis-1.1.0.tgz
     version: 1.1.0
-generated: "2026-09-05T16:24:22.355096924Z"
+generated: "2026-09-06T14:03:47.184256625Z"
