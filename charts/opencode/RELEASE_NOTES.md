@@ -1,3 +1,14 @@
+## opencode 1.4.5
+
+**What changed**
+
+- The chart description and the README open with what the chart is for: running the OpenCode web UI and HTTP API as a service in your cluster, reachable from any browser, with one persistent workspace per repository.
+- A new section covers what running the agent in a cluster gives you, including the `server.cors` setting a publicly exposed web UI needs and the split between the browser ingress and the machine ingress.
+
+**Why**
+
+The previous text led with the Kubernetes objects the chart creates, so a reader had to work out for themselves why an agent belongs in a cluster at all. No template, value or default changed in this release.
+
 ## opencode 1.4.4
 
 **What changed**
