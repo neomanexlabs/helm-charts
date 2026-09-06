@@ -1,4 +1,5 @@
-# Chart pull-request gate: lint, render, docs sync, identifier check.
+# Chart pull-request gate: lint, changelog annotation, render, docs sync,
+# identifier check.
 #
 # Runs on every pull request that touches charts/, and on main so a merge that
 # skipped review is still checked. Nothing here publishes anything.
@@ -54,6 +55,75 @@ jobs:
           else
             ct lint --config ct.yaml --all
           fi
+
+      # Artifact Hub renders the artifacthub.io/changes annotation carried by
+      # whichever version is current, and a published version can never be
+      # edited. A version bump that leaves the annotation alone therefore
+      # shows the previous release's changelog against the new release,
+      # permanently. Only a pull request has a base to compare against.
+      - name: Changelog annotation moves with the version
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          # A base ref the runner cannot resolve would turn every chart into a
+          # "new chart" and pass silently, so fail loudly instead.
+          git rev-parse --verify "origin/${BASE_REF}^{commit}" > /dev/null
+          python3 -c 'import yaml' 2>/dev/null || pip3 install --quiet pyyaml
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import subprocess
+          import sys
+
+          import yaml
+
+          KEY = "artifacthub.io/changes"
+          base = "origin/" + os.environ["BASE_REF"]
+          failures = []
+
+          for chart_yaml in sorted(pathlib.Path("charts").glob("*/Chart.yaml")):
+              chart = chart_yaml.parent.name
+              show = subprocess.run(
+                  ["git", "show", f"{base}:{chart_yaml.as_posix()}"],
+                  capture_output=True,
+                  text=True,
+              )
+              if show.returncode != 0:
+                  print(f"{chart}: not on the base branch, nothing to compare")
+                  continue
+
+              old = yaml.safe_load(show.stdout) or {}
+              new = yaml.safe_load(chart_yaml.read_text()) or {}
+              old_version = old.get("version")
+              new_version = new.get("version")
+
+              if old_version == new_version:
+                  print(f"{chart}: version unchanged at {new_version}")
+                  continue
+
+              old_changes = (old.get("annotations") or {}).get(KEY)
+              new_changes = (new.get("annotations") or {}).get(KEY)
+
+              if new_changes is None:
+                  failures.append(
+                      f"{chart}: version moved from {old_version} to {new_version} "
+                      f"but Chart.yaml carries no {KEY} annotation"
+                  )
+              elif old_changes == new_changes:
+                  failures.append(
+                      f"{chart}: version moved from {old_version} to {new_version} "
+                      f"but {KEY} still lists the entries of {old_version}"
+                  )
+              else:
+                  print(f"{chart}: {old_version} to {new_version}, {KEY} updated")
+
+          for failure in failures:
+              print(f"::error::{failure}")
+
+          sys.exit(1 if failures else 0)
+          PY
 
       - name: Chart render checks
         run: |
