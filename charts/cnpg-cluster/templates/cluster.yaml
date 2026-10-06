@@ -101,9 +101,6 @@ spec:
       {{- if .Values.bootstrap.initdb.secret }}
       secret:
         name: {{ .Values.bootstrap.initdb.secret.name }}
-      {{- else if include "cnpg-cluster.appUserSecretProvided" . }}
-      secret:
-        name: {{ include "cnpg-cluster.appUserSecretName" . }}
       {{- end }}
       {{- with .Values.bootstrap.initdb.options }}
       options:

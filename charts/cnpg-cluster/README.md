@@ -38,7 +38,7 @@ Read the render before installing. The high availability example names a placeho
 
 ### Credentials
 
-By default CloudNativePG creates the database owner with a generated password and stores it in the `<cluster>-app` secret. To choose the password, set `auth.appUser.password`, `auth.appUser.existingSecret` or `externalSecrets.appUserSecret`: the chart passes that secret to `initdb`, so `auth.appUser.username` must match `bootstrap.initdb.owner`.
+By default CloudNativePG creates the database owner with a generated password and stores it in the `<cluster>-app` secret. To choose the password, supply it through `auth.appUser.password`, `auth.appUser.existingSecret` or `externalSecrets.appUserSecret`, and name that secret in `bootstrap.initdb.secret.name` (`<cluster>-app-user` unless you set `auth.appUser.existingSecret`). `auth.appUser.username` must match `bootstrap.initdb.owner`. When `bootstrap.initdb.secret` is set, the operator uses that secret instead of generating `<cluster>-app`.
 
 Superuser access is off by default, as in CloudNativePG. With `auth.superuser.enabled: true` and nothing else, the operator generates the `<cluster>-superuser` secret. Set `auth.superuser.password`, `auth.superuser.existingSecret` or `externalSecrets.superuserSecret` to supply it yourself.
 
@@ -124,7 +124,7 @@ The chart renders one CloudNativePG `Cluster` plus the optional resources you tu
 | bootstrap.initdb.postInitApplicationSQLRefs | object | `{"configMapRefs":[],"secretRefs":[]}` | References to ConfigMaps/Secrets with SQL scripts |
 | bootstrap.initdb.postInitSQL | list | `[]` | SQL to run after initdb |
 | bootstrap.initdb.postInitTemplateSQL | list | `[]` | SQL to run in template1 after initdb |
-| bootstrap.initdb.secret | object | `{}` | Secret with the owner credentials. When empty and an application user secret is supplied through auth.appUser or externalSecrets.appUserSecret, that secret is used. Its username must match `owner`. |
+| bootstrap.initdb.secret | object | `{}` | Secret with the owner credentials (basic-auth, username equal to `owner`). When empty, the operator generates the owner password in `<cluster>-app`. To bootstrap with a secret from auth.appUser or externalSecrets.appUserSecret, name it here: `<cluster>-app-user` unless auth.appUser.existingSecret is set. |
 | bootstrap.method | string | `"initdb"` | Bootstrap method: initdb, recovery, or pg_basebackup |
 | bootstrap.pg_basebackup | object | `{"database":"","owner":"","source":""}` | pg_basebackup configuration (clone from existing cluster) |
 | bootstrap.pg_basebackup.source | string | `""` | Source cluster name |

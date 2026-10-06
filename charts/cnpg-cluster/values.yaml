@@ -133,9 +133,10 @@ bootstrap:
     database: app
     # -- Default database owner
     owner: app
-    # -- Secret with the owner credentials. When empty and an application user
-    # secret is supplied through auth.appUser or externalSecrets.appUserSecret, that
-    # secret is used. Its username must match `owner`.
+    # -- Secret with the owner credentials (basic-auth, username equal to `owner`).
+    # When empty, the operator generates the owner password in `<cluster>-app`.
+    # To bootstrap with a secret from auth.appUser or externalSecrets.appUserSecret,
+    # name it here: `<cluster>-app-user` unless auth.appUser.existingSecret is set.
     secret: {}
     # name: my-app-secret
     # -- Additional initdb options

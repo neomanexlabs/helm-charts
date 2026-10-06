@@ -43,8 +43,6 @@ annotations:
       description: A pooler entry without a pgbouncer block renders with the documented defaults instead of failing
     - kind: fixed
       description: Azure backups write to https://<storageAccount>.blob.core.windows.net/<container>/<path>, the address Barman accepts, instead of an azure:// path
-    - kind: fixed
-      description: An application user secret supplied through auth.appUser or externalSecrets.appUserSecret is passed to initdb, so the owner gets that password instead of a generated one
     - kind: changed
       description: Superuser access is off by default, and when it is on without a supplied secret the operator generates one instead of the cluster waiting for a secret that never appears
   artifacthub.io/links: |

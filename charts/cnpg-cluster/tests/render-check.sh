@@ -19,13 +19,14 @@
 #   E. superuser: enabled with nothing supplied lets the operator generate the
 #      secret (no superuserSecret, no Secret); enabled with a password renders
 #      the Secret and names it.
-#   F. application user: a supplied password renders the Secret and initdb
-#      reads it; an explicit bootstrap.initdb.secret wins.
+#   F. application user: a supplied password renders the Secret but initdb
+#      names no secret unless bootstrap.initdb.secret is set, so the operator
+#      keeps generating <cluster>-app.
 #   G. backups: S3 with a region renders s3Credentials once and the region
 #      from the same secret; Azure builds an https blob address and fails
 #      without a storage account.
 #   H. tests/values-eso-fixture.yaml renders two ExternalSecrets against the
-#      named store and no Secret, and the Cluster names both secrets. With
+#      named store and no Secret, and the Cluster names the superuser secret. With
 #      ESO on, no store name and no provider, the render fails.
 #   I. published-content checks: no private registry, private git host or
 #      company mailbox anywhere in the chart directory, no em dash, and no
@@ -165,15 +166,15 @@ echo "PASS: render-check E (superuser secret named only when one exists)"
 
 # --- F. application user secret -------------------------------------------------
 render "$TMP/app-pw.yaml" --set auth.appUser.password=example
-has "$TMP/app-pw.yaml" "name: rel-cnpg-cluster-app-user" "app user password"
-extract_doc "$TMP/app-pw.yaml" Cluster "initdb:" | grep -A1 '      secret:' | grep -qF "name: rel-cnpg-cluster-app-user" \
-  || fail "app user password: initdb does not read the rendered app user secret"
+has   "$TMP/app-pw.yaml" "name: rel-cnpg-cluster-app-user" "app user password"
+extract_doc "$TMP/app-pw.yaml" Cluster "initdb:" > "$TMP/app-pw-cluster.yaml"
+lacks "$TMP/app-pw-cluster.yaml" "      secret:" "app user password (initdb must not name a secret implicitly)"
 
-render "$TMP/app-explicit.yaml" --set auth.appUser.password=example --set bootstrap.initdb.secret.name=explicit
-extract_doc "$TMP/app-explicit.yaml" Cluster "initdb:" | grep -A1 '      secret:' | grep -qF "name: explicit" \
-  || fail "app user explicit: bootstrap.initdb.secret did not win"
+render "$TMP/app-explicit.yaml" --set auth.appUser.password=example --set bootstrap.initdb.secret.name=rel-cnpg-cluster-app-user
+extract_doc "$TMP/app-explicit.yaml" Cluster "initdb:" | grep -A1 '      secret:' | grep -qF "name: rel-cnpg-cluster-app-user" \
+  || fail "app user explicit: bootstrap.initdb.secret is not rendered"
 
-echo "PASS: render-check F (app user secret reaches initdb, explicit secret wins)"
+echo "PASS: render-check F (initdb secret only when named explicitly)"
 
 # --- G. backup destinations -----------------------------------------------------
 render "$TMP/s3.yaml" --set backup.enabled=true --set backup.provider=s3 \
@@ -202,8 +203,6 @@ render "$TMP/eso.yaml" -f "$ESO_FIXTURE"
 has "$TMP/eso.yaml" "name: example-store" "eso"
 has "$TMP/eso.yaml" "kind: ClusterSecretStore" "eso"
 has "$TMP/eso.yaml" "superuserSecret:" "eso"
-extract_doc "$TMP/eso.yaml" Cluster "initdb:" | grep -A1 '      secret:' | grep -qF "name: rel-cnpg-cluster-app-user" \
-  || fail "eso: initdb does not read the external app user secret"
 render_fails "eso without provider" "externalSecrets.provider is required" \
   --set externalSecrets.enabled=true
 

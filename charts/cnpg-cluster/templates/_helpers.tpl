@@ -112,19 +112,6 @@ Return the superuser secret name.
 {{- end }}
 
 {{/*
-Non-empty when an application user secret will exist for the cluster to read:
-an existing secret, an external secret, or a password the chart renders.
-*/}}
-{{- define "cnpg-cluster.appUserSecretProvided" -}}
-{{- if .Values.auth.appUser.enabled }}
-{{- if .Values.auth.appUser.existingSecret }}true
-{{- else if and .Values.externalSecrets.enabled .Values.externalSecrets.appUserSecret }}true
-{{- else if and (not .Values.externalSecrets.enabled) .Values.auth.appUser.password }}true
-{{- end }}
-{{- end }}
-{{- end }}
-
-{{/*
 Non-empty when a superuser secret will exist for the cluster to reference:
 an existing secret, a password in values, or an ExternalSecret.
 */}}
