@@ -1,5 +1,71 @@
 apiVersion: v1
 entries:
+  cnpg-cluster:
+  - annotations:
+      artifacthub.io/category: database
+      artifacthub.io/changes: |
+        - kind: added
+          description: First public release. Renders a CloudNativePG Cluster with optional PgBouncer poolers, scheduled backups to GCS, S3 or Azure, PodMonitors, NetworkPolicies and External Secrets Operator integration
+        - kind: added
+          description: Optional replica recovery CronJob that rebuilds replicas stuck in CrashLoopBackOff, removes orphaned instance pods and fails loudly when the read-write service has no endpoints
+        - kind: fixed
+          description: An S3 backup with a region set no longer renders the s3Credentials key twice
+        - kind: fixed
+          description: A pooler entry without a pgbouncer block renders with the documented defaults instead of failing
+        - kind: fixed
+          description: Azure backups write to https://<storageAccount>.blob.core.windows.net/<container>/<path>, the address Barman accepts, instead of an azure:// path
+        - kind: changed
+          description: Superuser access is off by default, and when it is on without a supplied secret the operator generates one instead of the cluster waiting for a secret that never appears
+      artifacthub.io/images: |
+        - name: postgresql
+          image: ghcr.io/cloudnative-pg/postgresql:17
+        - name: recovery
+          image: alpine/k8s:1.33.5
+      artifacthub.io/license: MIT
+      artifacthub.io/links: |
+        - name: Website
+          url: https://neomanex.com
+        - name: Contact
+          url: https://neomanex.com/contact
+        - name: ConvOps
+          url: https://convops.app
+        - name: Gnosari
+          url: https://gnosari.com
+        - name: Source
+          url: https://github.com/neomanexlabs/helm-charts
+        - name: CloudNativePG documentation
+          url: https://cloudnative-pg.io/documentation/current/
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+    apiVersion: v2
+    appVersion: 1.29.1
+    created: "2026-10-06T12:09:51.396407382Z"
+    description: Runs a CloudNativePG PostgreSQL cluster on Kubernetes, tuned to stay
+      available on spot and preemptible nodes, with backups, PgBouncer pooling and
+      automatic recovery of stuck replicas.
+    digest: 6880668b142a743f858c8839ea80fca9c97e1eb5190588cfb3513bbe9e60230a
+    home: https://neomanex.com
+    keywords:
+    - postgresql
+    - postgres
+    - cloudnative-pg
+    - cnpg
+    - high-availability
+    - spot-instances
+    - pgbouncer
+    - backup
+    kubeVersion: '>=1.25.0-0'
+    maintainers:
+    - name: Neomanex
+      url: https://neomanex.com/contact
+    name: cnpg-cluster
+    sources:
+    - https://github.com/neomanexlabs/helm-charts
+    - https://github.com/cloudnative-pg/cloudnative-pg
+    type: application
+    urls:
+    - https://github.com/neomanexlabs/helm-charts/releases/download/cnpg-cluster-1.0.0/cnpg-cluster-1.0.0.tgz
+    version: 1.0.0
   opencode:
   - annotations:
       artifacthub.io/changes: |
@@ -303,4 +369,4 @@ entries:
     urls:
     - https://github.com/neomanexlabs/helm-charts/releases/download/redis-1.1.0/redis-1.1.0.tgz
     version: 1.1.0
-generated: "2026-09-06T14:03:47.184256625Z"
+generated: "2026-10-06T12:09:51.396421769Z"
