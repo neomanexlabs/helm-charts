@@ -1,0 +1,196 @@
+{{/*
+================================================================================
+CloudNativePG Pooler CRD (PgBouncer)
+================================================================================
+Connection pooling with PgBouncer for PostgreSQL clusters.
+
+Features:
+- Separate RW (read-write) and RO (read-only) poolers
+- Configurable pool modes (session, transaction, statement)
+- High availability with multiple replicas
+- Resource management and anti-affinity
+*/}}
+{{- if .Values.pooler.enabled }}
+{{- range .Values.pooler.instances }}
+{{- $pgb := .pgbouncer | default dict }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: {{ include "cnpg-cluster.clusterName" $ }}-pooler-{{ .type }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "cnpg-cluster.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: pooler
+    cnpg.io/poolerType: {{ .type }}
+  {{- with (include "cnpg-cluster.annotations" $) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  # Reference to the cluster
+  cluster:
+    name: {{ include "cnpg-cluster.clusterName" $ }}
+
+  # Number of PgBouncer instances
+  instances: {{ .replicas | default 2 }}
+
+  # Pooler type: rw (read-write, points to primary) or ro (read-only, points to replicas)
+  type: {{ .type }}
+
+  # PgBouncer configuration
+  pgbouncer:
+    # Pool mode: session, transaction, or statement
+    poolMode: {{ $pgb.poolMode | default "transaction" }}
+
+    # Connection pool settings
+    parameters:
+      {{- if $pgb.parameters }}
+      {{- toYaml $pgb.parameters | nindent 6 }}
+      {{- else }}
+      max_client_conn: {{ $pgb.maxClientConnections | default "1000" | quote }}
+      default_pool_size: {{ $pgb.defaultPoolSize | default "25" | quote }}
+      {{- with $pgb.minPoolSize }}
+      min_pool_size: {{ . | quote }}
+      {{- end }}
+      {{- with $pgb.reservePoolSize }}
+      reserve_pool_size: {{ . | quote }}
+      {{- end }}
+      {{- with $pgb.reservePoolTimeout }}
+      reserve_pool_timeout: {{ . | quote }}
+      {{- end }}
+      {{- with $pgb.maxDbConnections }}
+      max_db_connections: {{ . | quote }}
+      {{- end }}
+      {{- with $pgb.maxUserConnections }}
+      max_user_connections: {{ . | quote }}
+      {{- end }}
+      {{- with $pgb.serverIdleTimeout }}
+      server_idle_timeout: {{ . | quote }}
+      {{- end }}
+      {{- with $pgb.serverConnectTimeout }}
+      server_connect_timeout: {{ . | quote }}
+      {{- end }}
+      {{- with $pgb.queryTimeout }}
+      query_timeout: {{ . | quote }}
+      {{- end }}
+      {{- with $pgb.queryWaitTimeout }}
+      query_wait_timeout: {{ . | quote }}
+      {{- end }}
+      {{- with $pgb.clientIdleTimeout }}
+      client_idle_timeout: {{ . | quote }}
+      {{- end }}
+      {{- end }}
+
+    {{- with $pgb.authQuerySecret }}
+    authQuerySecret:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+    {{- with $pgb.authQuery }}
+    authQuery: {{ . | quote }}
+    {{- end }}
+
+  # Pause connections (useful for maintenance)
+  paused: {{ .paused | default false }}
+
+  # Pod template for customization
+  template:
+    metadata:
+      labels:
+        {{- include "cnpg-cluster.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: pooler
+        cnpg.io/poolerType: {{ .type }}
+      {{- /* Per-instance podAnnotations override chart-level defaultPodAnnotations.
+             defaultPodAnnotations carries safe-to-evict so the pgbouncer emptyDir
+             does not pin an autoscaled (e.g. fallback) node and block scale-down. */}}
+      {{- $podAnnotations := .podAnnotations | default $.Values.pooler.defaultPodAnnotations }}
+      {{- with $podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- if or .resources (and $.Values.pooler.defaultResources) }}
+      containers:
+        - name: pgbouncer
+          {{- with .image }}
+          image: {{ . }}
+          {{- end }}
+          {{- if .resources }}
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+          {{- else if $.Values.pooler.defaultResources }}
+          resources:
+            {{- toYaml $.Values.pooler.defaultResources | nindent 12 }}
+          {{- end }}
+      {{- else }}
+      containers: []
+      {{- end }}
+
+      {{- if or .affinity $.Values.pooler.defaultAffinity }}
+      affinity:
+        {{- if .affinity }}
+        {{- toYaml .affinity | nindent 8 }}
+        {{- else if $.Values.pooler.defaultAffinity }}
+        {{- toYaml $.Values.pooler.defaultAffinity | nindent 8 }}
+        {{- end }}
+      {{- end }}
+
+      {{- if or .tolerations $.Values.pooler.defaultTolerations }}
+      tolerations:
+        {{- if .tolerations }}
+        {{- toYaml .tolerations | nindent 8 }}
+        {{- else if $.Values.pooler.defaultTolerations }}
+        {{- toYaml $.Values.pooler.defaultTolerations | nindent 8 }}
+        {{- end }}
+      {{- end }}
+
+      {{- if or .nodeSelector $.Values.pooler.defaultNodeSelector }}
+      nodeSelector:
+        {{- if .nodeSelector }}
+        {{- toYaml .nodeSelector | nindent 8 }}
+        {{- else if $.Values.pooler.defaultNodeSelector }}
+        {{- toYaml $.Values.pooler.defaultNodeSelector | nindent 8 }}
+        {{- end }}
+      {{- end }}
+
+      {{- /* Scheduling priority: per-instance priorityClassName, else
+             pooler.defaultPriorityClassName. Omitted when both are empty, so an
+             unset chart renders exactly as before. */}}
+      {{- with (.priorityClassName | default $.Values.pooler.defaultPriorityClassName) }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+
+      {{- /* Spread: per-instance topologySpreadConstraints, else
+             pooler.defaultTopologySpreadConstraints, passed through verbatim
+             (no tpl). Omitted when both are empty. */}}
+      {{- with (.topologySpreadConstraints | default $.Values.pooler.defaultTopologySpreadConstraints) }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+  # Service template for customization
+  {{- if or .serviceType .serviceAnnotations .serviceLabels }}
+  serviceTemplate:
+    metadata:
+      {{- with .serviceLabels }}
+      labels:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .serviceAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- if .serviceType }}
+    spec:
+      type: {{ .serviceType }}
+    {{- end }}
+  {{- end }}
+
+{{- end }}
+{{- end }}

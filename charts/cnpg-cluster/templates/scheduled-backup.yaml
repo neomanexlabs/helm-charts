@@ -1,0 +1,70 @@
+{{/*
+================================================================================
+CloudNativePG ScheduledBackup CRD
+================================================================================
+Automated backup scheduling for PostgreSQL clusters.
+
+Features:
+- Cron-based scheduling (6-field format with seconds)
+- Configurable backup ownership
+- Optional immediate backup on creation
+- Suspend/resume capability
+*/}}
+{{- if and .Values.backup.enabled .Values.scheduledBackup.enabled }}
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ include "cnpg-cluster.clusterName" . }}-scheduled
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cnpg-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+  {{- with (include "cnpg-cluster.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  # Reference to the cluster to backup
+  cluster:
+    name: {{ include "cnpg-cluster.clusterName" . }}
+
+  # Cron schedule (6-field format: seconds minutes hours day-of-month month day-of-week)
+  # Example: "0 0 2 * * *" = Every day at 2:00 AM
+  schedule: {{ .Values.scheduledBackup.schedule | quote }}
+
+  # Backup method: barmanObjectStore (default), volumeSnapshot, or plugin
+  {{- with .Values.scheduledBackup.method }}
+  method: {{ . }}
+  {{- end }}
+
+  # Whether to take an immediate backup when the resource is created
+  immediate: {{ .Values.scheduledBackup.immediate | default false }}
+
+  # Suspend scheduling (useful for maintenance)
+  suspend: {{ .Values.scheduledBackup.suspend | default false }}
+
+  # Owner reference for garbage collection
+  # Options: none, self (ScheduledBackup), cluster (Cluster)
+  backupOwnerReference: {{ .Values.scheduledBackup.backupOwnerReference | default "self" }}
+
+  # Target for backup: primary or prefer-standby (default)
+  {{- with .Values.scheduledBackup.target }}
+  target: {{ . }}
+  {{- end }}
+
+  # Online backup configuration (for volumeSnapshot method)
+  {{- with .Values.scheduledBackup.online }}
+  online: {{ . }}
+  {{- end }}
+
+  {{- with .Values.scheduledBackup.onlineConfiguration }}
+  onlineConfiguration:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
+  # Plugin configuration (for plugin method)
+  {{- with .Values.scheduledBackup.pluginConfiguration }}
+  pluginConfiguration:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

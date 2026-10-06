@@ -1,0 +1,471 @@
+{{/*
+================================================================================
+CloudNativePG Cluster CRD
+================================================================================
+Enterprise-grade PostgreSQL cluster with HA support for preemptible nodes.
+
+Key Features:
+- Automatic failover with replication slots
+- PVC reuse during node maintenance (critical for preemptible nodes)
+- Configurable synchronous replication with self-healing
+- Automatic memory tuning for PostgreSQL parameters
+*/}}
+{{- include "cnpg-cluster.validateValues" . }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "cnpg-cluster.clusterName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cnpg-cluster.labels" . | nindent 4 }}
+  {{- with (include "cnpg-cluster.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  # ---------------------------------------------------------------------------
+  # CLUSTER CONFIGURATION
+  # ---------------------------------------------------------------------------
+  {{- if .Values.podAnnotations }}
+  inheritedMetadata:
+    annotations:
+      {{- toYaml .Values.podAnnotations | nindent 6 }}
+  {{- end }}
+
+  {{- with .Values.cluster.description }}
+  description: {{ . | quote }}
+  {{- end }}
+
+  instances: {{ .Values.instances }}
+
+  {{- if .Values.image.name }}
+  imageName: {{ .Values.image.name }}
+  {{- else }}
+  imageName: {{ include "cnpg-cluster.imageName" . }}
+  {{- end }}
+  {{- with .Values.image.pullPolicy }}
+  imagePullPolicy: {{ . }}
+  {{- end }}
+
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
+  # Update strategy: supervised (manual) or unsupervised (automatic)
+  primaryUpdateStrategy: {{ .Values.cluster.primaryUpdateStrategy | default "unsupervised" }}
+  primaryUpdateMethod: {{ .Values.cluster.primaryUpdateMethod | default "switchover" }}
+
+  enablePDB: {{ hasKey .Values.cluster "enablePDB" | ternary .Values.cluster.enablePDB true }}
+
+  # ---------------------------------------------------------------------------
+  # POSTGRESQL CONFIGURATION
+  # ---------------------------------------------------------------------------
+  postgresql:
+    {{- with .Values.postgresql.parameters }}
+    parameters:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+    {{- if .Values.postgresql.synchronous.enabled }}
+    synchronous:
+      method: {{ .Values.postgresql.synchronous.method | default "any" }}
+      number: {{ .Values.postgresql.synchronous.number | default 1 }}
+      {{- if .Values.postgresql.synchronous.dataDurability }}
+      dataDurability: {{ .Values.postgresql.synchronous.dataDurability }}
+      {{- end }}
+      {{- if .Values.postgresql.synchronous.failoverQuorum }}
+      failoverQuorum: {{ .Values.postgresql.synchronous.failoverQuorum }}
+      {{- end }}
+    {{- end }}
+
+    {{- include "cnpg-cluster.pgHba" . | nindent 4 }}
+
+    {{- with .Values.postgresql.ldap }}
+    ldap:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+    {{- if .Values.postgresql.enableAlterSystem }}
+    enableAlterSystem: {{ .Values.postgresql.enableAlterSystem }}
+    {{- end }}
+
+  # ---------------------------------------------------------------------------
+  # BOOTSTRAP CONFIGURATION
+  # ---------------------------------------------------------------------------
+  bootstrap:
+    {{- if eq .Values.bootstrap.method "initdb" }}
+    initdb:
+      database: {{ .Values.bootstrap.initdb.database | default "app" }}
+      owner: {{ .Values.bootstrap.initdb.owner | default "app" }}
+      {{- if .Values.bootstrap.initdb.secret }}
+      secret:
+        name: {{ .Values.bootstrap.initdb.secret.name }}
+      {{- else if include "cnpg-cluster.appUserSecretProvided" . }}
+      secret:
+        name: {{ include "cnpg-cluster.appUserSecretName" . }}
+      {{- end }}
+      {{- with .Values.bootstrap.initdb.options }}
+      options:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bootstrap.initdb.postInitSQL }}
+      postInitSQL:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bootstrap.initdb.postInitApplicationSQL }}
+      postInitApplicationSQL:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bootstrap.initdb.postInitTemplateSQL }}
+      postInitTemplateSQL:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or .Values.bootstrap.initdb.postInitApplicationSQLRefs.configMapRefs .Values.bootstrap.initdb.postInitApplicationSQLRefs.secretRefs }}
+      postInitApplicationSQLRefs:
+        {{- with .Values.bootstrap.initdb.postInitApplicationSQLRefs.configMapRefs }}
+        configMapRefs:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.bootstrap.initdb.postInitApplicationSQLRefs.secretRefs }}
+        secretRefs:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- end }}
+
+    {{- else if eq .Values.bootstrap.method "recovery" }}
+    recovery:
+      {{- if .Values.bootstrap.recovery.backup }}
+      backup:
+        name: {{ .Values.bootstrap.recovery.backup.name }}
+      {{- end }}
+      {{- if .Values.bootstrap.recovery.source }}
+      source: {{ .Values.bootstrap.recovery.source }}
+      {{- end }}
+      {{- with .Values.bootstrap.recovery.recoveryTarget }}
+      recoveryTarget:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+    {{- else if eq .Values.bootstrap.method "pg_basebackup" }}
+    pg_basebackup:
+      source: {{ .Values.bootstrap.pg_basebackup.source | required "bootstrap.pg_basebackup.source is required" }}
+      {{- with .Values.bootstrap.pg_basebackup.database }}
+      database: {{ . }}
+      {{- end }}
+      {{- with .Values.bootstrap.pg_basebackup.owner }}
+      owner: {{ . }}
+      {{- end }}
+    {{- end }}
+
+  # ---------------------------------------------------------------------------
+  # AUTHENTICATION
+  # ---------------------------------------------------------------------------
+  {{- if .Values.auth.superuser.enabled }}
+  enableSuperuserAccess: true
+  {{- /* Name a secret only when one will exist. Without it, CloudNativePG
+         generates <cluster>-superuser on its own. */}}
+  {{- if include "cnpg-cluster.superuserSecretProvided" . }}
+  superuserSecret:
+    name: {{ include "cnpg-cluster.superuserSecretName" . }}
+  {{- end }}
+  {{- else }}
+  enableSuperuserAccess: false
+  {{- end }}
+
+  # ---------------------------------------------------------------------------
+  # STORAGE CONFIGURATION
+  # ---------------------------------------------------------------------------
+  storage:
+    size: {{ .Values.storage.size }}
+    {{- with .Values.storage.storageClass }}
+    storageClass: {{ . }}
+    {{- end }}
+    {{- if .Values.storage.resizeInUseVolumes }}
+    resizeInUseVolumes: {{ .Values.storage.resizeInUseVolumes }}
+    {{- end }}
+    {{- with .Values.storage.pvcTemplate }}
+    pvcTemplate:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+  {{- if .Values.walStorage.enabled }}
+  walStorage:
+    size: {{ .Values.walStorage.size }}
+    {{- with .Values.walStorage.storageClass }}
+    storageClass: {{ . }}
+    {{- end }}
+    {{- if .Values.walStorage.resizeInUseVolumes }}
+    resizeInUseVolumes: {{ .Values.walStorage.resizeInUseVolumes }}
+    {{- end }}
+  {{- end }}
+
+  # ---------------------------------------------------------------------------
+  # RESOURCES
+  # ---------------------------------------------------------------------------
+  {{- with .Values.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
+  {{- with .Values.ephemeralVolumesSizeLimit }}
+  ephemeralVolumesSizeLimit:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
+  {{- with .Values.priorityClassName }}
+  priorityClassName: {{ . }}
+  {{- end }}
+
+  # ---------------------------------------------------------------------------
+  # SCHEDULING & HIGH AVAILABILITY
+  # ---------------------------------------------------------------------------
+  {{- if or .Values.affinity.enablePodAntiAffinity .Values.affinity.nodeSelector .Values.affinity.nodeAffinity .Values.affinity.additionalPodAffinity .Values.affinity.additionalPodAntiAffinity .Values.affinity.tolerations }}
+  affinity:
+    enablePodAntiAffinity: {{ .Values.affinity.enablePodAntiAffinity }}
+    topologyKey: {{ .Values.affinity.topologyKey | quote }}
+    podAntiAffinityType: {{ .Values.affinity.podAntiAffinityType }}
+    {{- with .Values.affinity.nodeSelector }}
+    nodeSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.affinity.nodeAffinity }}
+    nodeAffinity:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.affinity.additionalPodAffinity }}
+    additionalPodAffinity:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.affinity.additionalPodAntiAffinity }}
+    additionalPodAntiAffinity:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.affinity.tolerations }}
+    tolerations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- end }}
+
+  {{- with .Values.topologySpreadConstraints }}
+  topologySpreadConstraints:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
+  # ---------------------------------------------------------------------------
+  # FAILOVER & MAINTENANCE (Critical for preemptible nodes)
+  # ---------------------------------------------------------------------------
+  # Delay before starting failover (0 = immediate)
+  failoverDelay: {{ .Values.failover.delay | default 0 }}
+
+  # Switchover delay - time for graceful shutdown
+  switchoverDelay: {{ .Values.failover.switchoverDelay | default 60 }}
+
+  # Start/Stop delays
+  startDelay: {{ .Values.cluster.startDelay | default 30 }}
+  stopDelay: {{ .Values.cluster.stopDelay | default 30 }}
+
+  # Smart shutdown timeout
+  smartShutdownTimeout: {{ .Values.cluster.smartShutdownTimeout | default 180 }}
+
+  # ---------------------------------------------------------------------------
+  # REPLICATION SLOTS (Critical for HA and preemptible nodes)
+  # ---------------------------------------------------------------------------
+  replicationSlots:
+    highAvailability:
+      enabled: {{ .Values.replicationSlots.highAvailability.enabled }}
+      {{- with .Values.replicationSlots.highAvailability.slotPrefix }}
+      slotPrefix: {{ . }}
+      {{- end }}
+    {{- if .Values.replicationSlots.synchronizeReplicas }}
+    synchronizeReplicas:
+      enabled: {{ .Values.replicationSlots.synchronizeReplicas.enabled | default true }}
+      {{- with .Values.replicationSlots.synchronizeReplicas.excludePatterns }}
+      excludePatterns:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- end }}
+    {{- with .Values.replicationSlots.updateInterval }}
+    updateInterval: {{ . }}
+    {{- end }}
+
+  # ---------------------------------------------------------------------------
+  # NODE MAINTENANCE WINDOW (Critical for preemptible nodes)
+  # ---------------------------------------------------------------------------
+  nodeMaintenanceWindow:
+    inProgress: {{ .Values.maintenance.inProgress | default false }}
+    # CRITICAL: reusePVC=true allows pods to reattach to existing PVCs after node preemption
+    reusePVC: {{ .Values.maintenance.reusePVC | default true }}
+
+  # ---------------------------------------------------------------------------
+  # BACKUP CONFIGURATION
+  # ---------------------------------------------------------------------------
+  {{- if .Values.backup.enabled }}
+  backup:
+    {{- if eq .Values.backup.provider "gcs" }}
+    barmanObjectStore:
+      destinationPath: {{ include "cnpg-cluster.backupDestinationPath" . }}
+      googleCredentials:
+        {{- if .Values.backup.gcs.gkeEnvironment }}
+        gkeEnvironment: true
+        {{- else }}
+        applicationCredentials:
+          name: {{ include "cnpg-cluster.backupSecretName" . }}
+          key: {{ .Values.backup.gcs.credentials.key | default "gcp-credentials.json" }}
+        {{- end }}
+      wal:
+        compression: {{ .Values.backup.wal.compression | default "gzip" }}
+        {{- with .Values.backup.wal.maxParallel }}
+        maxParallel: {{ . }}
+        {{- end }}
+        {{- with .Values.backup.wal.encryption }}
+        encryption: {{ . }}
+        {{- end }}
+      data:
+        compression: {{ .Values.backup.data.compression | default "gzip" }}
+        {{- with .Values.backup.data.encryption }}
+        encryption: {{ . }}
+        {{- end }}
+        {{- with .Values.backup.data.jobs }}
+        jobs: {{ . }}
+        {{- end }}
+
+    {{- else if eq .Values.backup.provider "s3" }}
+    barmanObjectStore:
+      destinationPath: {{ include "cnpg-cluster.backupDestinationPath" . }}
+      {{- with .Values.backup.s3.endpoint }}
+      endpointURL: {{ . }}
+      {{- end }}
+      s3Credentials:
+        accessKeyId:
+          name: {{ include "cnpg-cluster.backupSecretName" . }}
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: {{ include "cnpg-cluster.backupSecretName" . }}
+          key: ACCESS_SECRET_KEY
+        {{- with .Values.backup.s3.region }}
+        region:
+          name: {{ include "cnpg-cluster.backupSecretName" $ }}
+          key: AWS_REGION
+        {{- end }}
+      wal:
+        compression: {{ .Values.backup.wal.compression | default "gzip" }}
+        {{- with .Values.backup.wal.maxParallel }}
+        maxParallel: {{ . }}
+        {{- end }}
+      data:
+        compression: {{ .Values.backup.data.compression | default "gzip" }}
+        {{- with .Values.backup.data.jobs }}
+        jobs: {{ . }}
+        {{- end }}
+
+    {{- else if eq .Values.backup.provider "azure" }}
+    barmanObjectStore:
+      destinationPath: {{ include "cnpg-cluster.backupDestinationPath" . }}
+      azureCredentials:
+        {{- if .Values.backup.azure.inheritFromAzureAD }}
+        inheritFromAzureAD: true
+        {{- else }}
+        connectionString:
+          name: {{ include "cnpg-cluster.backupSecretName" . }}
+          key: AZURE_CONNECTION_STRING
+        {{- end }}
+      wal:
+        compression: {{ .Values.backup.wal.compression | default "gzip" }}
+        {{- with .Values.backup.wal.maxParallel }}
+        maxParallel: {{ . }}
+        {{- end }}
+      data:
+        compression: {{ .Values.backup.data.compression | default "gzip" }}
+        {{- with .Values.backup.data.jobs }}
+        jobs: {{ . }}
+        {{- end }}
+    {{- end }}
+
+    {{- with .Values.backup.retentionPolicy }}
+    retentionPolicy: {{ . | quote }}
+    {{- end }}
+
+    {{- with .Values.backup.target }}
+    target: {{ . }}
+    {{- end }}
+  {{- end }}
+
+  # ---------------------------------------------------------------------------
+  # EXTERNAL CLUSTERS (for recovery or replica clusters)
+  # ---------------------------------------------------------------------------
+  {{- with .Values.externalClusters }}
+  externalClusters:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
+  # ---------------------------------------------------------------------------
+  # MONITORING
+  # ---------------------------------------------------------------------------
+  {{- if .Values.monitoring.enabled }}
+  monitoring:
+    enablePodMonitor: {{ .Values.monitoring.podMonitor.enabled | default false }}
+    {{- with .Values.monitoring.customQueriesConfigMap }}
+    customQueriesConfigMap:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.monitoring.customQueriesSecret }}
+    customQueriesSecret:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- end }}
+
+  # ---------------------------------------------------------------------------
+  # CERTIFICATES
+  # ---------------------------------------------------------------------------
+  {{- if .Values.certificates.serverCASecret }}
+  certificates:
+    {{- with .Values.certificates.serverCASecret }}
+    serverCASecret: {{ . }}
+    {{- end }}
+    {{- with .Values.certificates.serverTLSSecret }}
+    serverTLSSecret: {{ . }}
+    {{- end }}
+    {{- with .Values.certificates.clientCASecret }}
+    clientCASecret: {{ . }}
+    {{- end }}
+    {{- with .Values.certificates.replicationTLSSecret }}
+    replicationTLSSecret: {{ . }}
+    {{- end }}
+  {{- end }}
+
+  # ---------------------------------------------------------------------------
+  # SERVICE ACCOUNT
+  # ---------------------------------------------------------------------------
+  {{- if .Values.serviceAccount.create }}
+  serviceAccountTemplate:
+    metadata:
+      name: {{ include "cnpg-cluster.serviceAccountName" . }}
+      labels:
+        {{- include "cnpg-cluster.labels" . | nindent 8 }}
+      {{- with .Values.serviceAccount.annotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- end }}
+
+  # ---------------------------------------------------------------------------
+  # ADDITIONAL CONFIGURATION
+  # ---------------------------------------------------------------------------
+  {{- with .Values.env }}
+  env:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
+  {{- with .Values.envFrom }}
+  envFrom:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
+  {{- if .Values.managed.enabled }}
+  managed:
+    {{- with .Values.managed.roles }}
+    roles:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- end }}

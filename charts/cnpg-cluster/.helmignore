@@ -1,0 +1,6 @@
+# Developer fixtures and docs: never part of the packaged chart.
+tests/
+examples/
+*.md~
+.git*
+README.md.gotmpl

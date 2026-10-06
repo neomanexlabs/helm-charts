@@ -1,0 +1,798 @@
+# =============================================================================
+# CloudNativePG Cluster Helm Chart - Default Values
+# =============================================================================
+# Enterprise-grade PostgreSQL cluster configuration with HA support
+# for preemptible/spot nodes on Kubernetes.
+#
+# IMPORTANT: This chart requires CloudNativePG operator to be installed.
+# Install via: helm install cnpg cloudnative-pg/cloudnative-pg -n cnpg-system
+# =============================================================================
+
+# -- Override the chart name
+nameOverride: ""
+# -- Override the full resource name
+fullnameOverride: ""
+
+# =============================================================================
+# CLUSTER CONFIGURATION
+# =============================================================================
+
+# -- Cluster-level settings
+cluster:
+  # -- Custom cluster name (defaults to release name)
+  name: ""
+  # -- Cluster description for documentation
+  description: ""
+  # -- Primary update strategy: unsupervised (automatic) or supervised (manual)
+  primaryUpdateStrategy: unsupervised
+  # -- Primary update method: switchover (graceful) or restart
+  primaryUpdateMethod: switchover
+  # -- Manage PodDisruptionBudget resources (set false for dev/staging)
+  enablePDB: true
+  # -- Seconds to wait before starting PostgreSQL
+  startDelay: 30
+  # -- Seconds to wait before stopping PostgreSQL
+  stopDelay: 30
+  # -- Smart shutdown timeout in seconds
+  smartShutdownTimeout: 180
+
+# -- Number of PostgreSQL instances (1 = standalone, 3+ = HA)
+# For HA on preemptible nodes, use 3 instances minimum
+instances: 3
+
+# =============================================================================
+# IMAGE CONFIGURATION
+# =============================================================================
+
+image:
+  # -- Full image name (overrides repository and tag)
+  name: ""
+  # -- Image repository
+  repository: ghcr.io/cloudnative-pg/postgresql
+  # -- Image tag (defaults to postgresql.version)
+  tag: ""
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+
+# -- Image pull secrets for private registries
+imagePullSecrets: []
+# - name: my-registry-secret
+
+# =============================================================================
+# POSTGRESQL CONFIGURATION
+# =============================================================================
+
+postgresql:
+  # -- PostgreSQL major version
+  version: "17"
+
+  # -- PostgreSQL parameters (postgresql.conf)
+  # Memory settings are auto-tuned if not specified
+  parameters:
+    # Connection settings
+    max_connections: "100"
+    # Memory settings (auto-calculated if not set based on resources.limits.memory)
+    # shared_buffers: "256MB"
+    # effective_cache_size: "768MB"
+    work_mem: "4MB"
+    maintenance_work_mem: "64MB"
+    # WAL settings
+    wal_buffers: "16MB"
+    min_wal_size: "1GB"
+    max_wal_size: "4GB"
+    # Checkpoint settings
+    checkpoint_completion_target: "0.9"
+    # Query planner (optimized for SSD)
+    random_page_cost: "1.1"
+    effective_io_concurrency: "200"
+    # Logging
+    log_statement: "ddl"
+    log_min_duration_statement: "1000"
+    # Replication slots WAL retention limit
+    max_slot_wal_keep_size: "10GB"
+
+  # -- Synchronous replication configuration
+  # Recommended for critical workloads requiring zero data loss
+  synchronous:
+    # -- Enable synchronous replication
+    enabled: false
+    # -- Method: any (quorum) or first (priority)
+    method: any
+    # -- Number of synchronous standbys
+    number: 1
+    # -- Data durability: required (strict) or preferred (self-healing)
+    # Use 'preferred' for preemptible nodes to allow self-healing
+    dataDurability: preferred
+    # -- Enable failover quorum for enhanced data safety
+    failoverQuorum: false
+
+  # -- pg_hba.conf entries (client authentication).
+  # When empty, the chart renders three rules that allow scram-sha-256 password
+  # logins from the RFC 1918 private ranges (10.0.0.0/8, 172.16.0.0/12 and
+  # 192.168.0.0/16). Set your own list to replace them entirely.
+  pg_hba: []
+  # - host all all 10.0.0.0/8 scram-sha-256
+
+  # -- Enable ALTER SYSTEM command
+  enableAlterSystem: false
+
+  # -- LDAP configuration (optional)
+  ldap: {}
+
+# =============================================================================
+# BOOTSTRAP CONFIGURATION
+# =============================================================================
+
+bootstrap:
+  # -- Bootstrap method: initdb, recovery, or pg_basebackup
+  method: initdb
+
+  # -- initdb configuration (new cluster)
+  initdb:
+    # -- Default database name
+    database: app
+    # -- Default database owner
+    owner: app
+    # -- Secret with the owner credentials. When empty and an application user
+    # secret is supplied through auth.appUser or externalSecrets.appUserSecret, that
+    # secret is used. Its username must match `owner`.
+    secret: {}
+    # name: my-app-secret
+    # -- Additional initdb options
+    options: []
+    # -- SQL to run after initdb
+    postInitSQL: []
+    # -- SQL to run in app database after initdb
+    postInitApplicationSQL: []
+    # -- SQL to run in template1 after initdb
+    postInitTemplateSQL: []
+    # -- References to ConfigMaps/Secrets with SQL scripts
+    postInitApplicationSQLRefs:
+      configMapRefs: []
+      secretRefs: []
+
+  # -- recovery configuration (restore from backup)
+  recovery:
+    # -- Backup to restore from
+    backup: {}
+    # name: backup-20240101
+    # -- Source cluster name (for external cluster recovery)
+    source: ""
+    # -- Recovery target configuration
+    recoveryTarget: {}
+    # targetTime: "2024-01-01T12:00:00Z"
+    # targetLSN: ""
+    # targetImmediate: false
+
+  # -- pg_basebackup configuration (clone from existing cluster)
+  pg_basebackup:
+    # -- Source cluster name
+    source: ""
+    database: ""
+    owner: ""
+
+# =============================================================================
+# AUTHENTICATION
+# =============================================================================
+
+auth:
+  # -- Superuser (postgres) configuration
+  superuser:
+    # -- Enable superuser access. Off by default, as in CloudNativePG. When on and
+    # no password, existingSecret or external secret is given, the operator
+    # generates the `<cluster>-superuser` secret itself.
+    enabled: false
+    # -- Password (use existingSecret or externalSecrets for production)
+    password: ""
+    # -- Use existing secret for superuser credentials
+    existingSecret: ""
+
+  # -- Application user configuration
+  appUser:
+    # -- Enable application user
+    enabled: true
+    # -- Username
+    username: app
+    # -- Password (use existingSecret or externalSecrets for production)
+    password: ""
+    # -- Use existing secret for app user credentials
+    existingSecret: ""
+
+# =============================================================================
+# STORAGE CONFIGURATION
+# =============================================================================
+
+storage:
+  # -- Storage size (required)
+  size: 10Gi
+  # -- Storage class (empty = cluster default)
+  storageClass: ""
+  # -- Allow online volume resize
+  resizeInUseVolumes: true
+  # -- Custom PVC template
+  pvcTemplate: {}
+
+# -- Separate WAL storage (recommended for high-performance workloads)
+walStorage:
+  # -- Enable separate WAL storage
+  enabled: false
+  # -- WAL storage size
+  size: 2Gi
+  # -- WAL storage class
+  storageClass: ""
+  # -- Allow online volume resize
+  resizeInUseVolumes: true
+
+# =============================================================================
+# RESOURCES
+# =============================================================================
+
+# -- Resource requests and limits for PostgreSQL pods
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+
+# -- Ephemeral volume size limits
+ephemeralVolumesSizeLimit: {}
+# shm: 256Mi
+# temporaryData: 1Gi
+
+# -- Priority class for pods
+priorityClassName: ""
+
+# -- Annotations added to every PostgreSQL pod (CloudNativePG inheritedMetadata)
+podAnnotations: {}
+
+# =============================================================================
+# HIGH AVAILABILITY & SCHEDULING
+# =============================================================================
+# Critical configuration for preemptible/spot nodes
+
+affinity:
+  # -- Enable pod anti-affinity (spread instances across nodes)
+  # REQUIRED for HA on preemptible nodes
+  enablePodAntiAffinity: true
+
+  # -- Topology key for anti-affinity
+  # kubernetes.io/hostname = different nodes (recommended for preemptible)
+  # topology.kubernetes.io/zone = different zones
+  topologyKey: kubernetes.io/hostname
+
+  # -- Anti-affinity type
+  # preferred = best-effort (allows scheduling even if not perfect)
+  # required = strict (pods won't schedule if can't spread)
+  # Use 'preferred' for preemptible nodes to avoid scheduling issues
+  podAntiAffinityType: preferred
+
+  # -- Node selector labels
+  nodeSelector: {}
+  # node-role.kubernetes.io/postgres: ""
+
+  # -- Node affinity rules
+  nodeAffinity: {}
+
+  # -- Additional pod affinity rules
+  additionalPodAffinity: {}
+
+  # -- Additional pod anti-affinity rules
+  additionalPodAntiAffinity: {}
+
+  # -- Pod tolerations
+  tolerations: []
+  # - key: "node.kubernetes.io/preemptible"
+  #   operator: "Exists"
+  #   effect: "NoSchedule"
+
+# -- Topology spread constraints
+topologySpreadConstraints: []
+
+# =============================================================================
+# FAILOVER CONFIGURATION
+# =============================================================================
+# Critical for minimizing downtime on preemptible nodes
+
+failover:
+  # -- Delay before starting failover (seconds)
+  # 0 = immediate failover (recommended for preemptible nodes)
+  delay: 0
+
+  # -- Switchover delay - time for graceful shutdown
+  # Higher = safer for data, but longer RTO
+  switchoverDelay: 60
+
+# =============================================================================
+# REPLICATION SLOTS
+# =============================================================================
+# Critical for WAL retention across failovers
+
+replicationSlots:
+  highAvailability:
+    # -- Enable HA replication slots (REQUIRED for HA)
+    enabled: true
+    # -- Slot name prefix
+    slotPrefix: "_cnpg_"
+
+  # -- Synchronize user-defined replication slots
+  synchronizeReplicas:
+    enabled: true
+    excludePatterns: []
+
+  # -- Update interval for slot synchronization (seconds)
+  updateInterval: 30
+
+# =============================================================================
+# NODE MAINTENANCE
+# =============================================================================
+# Critical for preemptible node handling
+
+maintenance:
+  # -- Node maintenance in progress
+  inProgress: false
+  # -- Reuse PVCs after node preemption (CRITICAL for preemptible nodes)
+  # When true, pods can reattach to existing PVCs on new nodes
+  reusePVC: true
+
+# =============================================================================
+# BACKUP CONFIGURATION
+# =============================================================================
+
+backup:
+  # -- Enable backups
+  enabled: false
+
+  # -- Backup provider: gcs, s3, or azure
+  provider: ""
+
+  # -- Custom destination path (overrides provider-specific path)
+  destinationPath: ""
+
+  # -- Retention policy (e.g., "30d", "7d")
+  retentionPolicy: "30d"
+
+  # -- Backup target: primary or prefer-standby
+  target: prefer-standby
+
+  # -- GCS (Google Cloud Storage) configuration
+  gcs:
+    # -- GCS bucket name
+    bucket: ""
+    # -- Path within bucket (defaults to cluster name)
+    path: ""
+    # -- Authenticate with GKE Workload Identity instead of a credentials secret
+    gkeEnvironment: false
+    # -- Explicit credentials (if not using Workload Identity)
+    credentials:
+      key: gcp-credentials.json
+
+  # -- S3 configuration
+  s3:
+    # -- S3 bucket name
+    bucket: ""
+    # -- Path within bucket
+    path: ""
+    # -- AWS region
+    region: ""
+    # -- Custom endpoint (for S3-compatible storage)
+    endpoint: ""
+    # -- Credentials (use externalSecrets for production)
+    credentials:
+      accessKeyId: ""
+      secretAccessKey: ""
+
+  # -- Azure Blob Storage configuration
+  azure:
+    # -- Container name
+    container: ""
+    # -- Path within container
+    path: ""
+    # -- Storage account name. Builds the destination https://<storageAccount>.blob.core.windows.net/<container>/<path>
+    storageAccount: ""
+    # -- Use Azure AD authentication
+    inheritFromAzureAD: false
+    # -- Credentials
+    credentials:
+      connectionString: ""
+
+  # -- Credentials secret configuration
+  credentials:
+    # -- Create secret from values
+    createSecret: false
+    # -- Use existing secret
+    existingSecret: ""
+
+  # -- WAL archiving configuration
+  wal:
+    # -- Compression: gzip, bzip2, snappy
+    compression: gzip
+    # -- Maximum parallel WAL archiving jobs
+    maxParallel: 8
+    # -- Encryption algorithm
+    encryption: ""
+
+  # -- Base backup configuration
+  data:
+    # -- Compression: gzip, bzip2, snappy
+    compression: gzip
+    # -- Encryption algorithm
+    encryption: ""
+    # -- Number of parallel backup jobs
+    jobs: 2
+
+# =============================================================================
+# SCHEDULED BACKUP
+# =============================================================================
+
+scheduledBackup:
+  # -- Enable scheduled backups
+  enabled: false
+
+  # -- Cron schedule (6-field format with seconds)
+  # "0 0 2 * * *" = Daily at 2:00 AM
+  schedule: "0 0 2 * * *"
+
+  # -- Backup method: barmanObjectStore, volumeSnapshot, or plugin
+  method: ""
+
+  # -- Take immediate backup on creation
+  immediate: false
+
+  # -- Suspend scheduling
+  suspend: false
+
+  # -- Owner reference: none, self, or cluster
+  backupOwnerReference: self
+
+  # -- Backup target: primary or prefer-standby
+  target: ""
+
+  # -- Online backup (for volumeSnapshot)
+  online: ""
+  # -- Online backup settings for volumeSnapshot (immediateCheckpoint, waitForArchive)
+  onlineConfiguration: {}
+
+  # -- Plugin configuration
+  pluginConfiguration: {}
+
+# =============================================================================
+# CONNECTION POOLER (PgBouncer)
+# =============================================================================
+
+pooler:
+  # -- Enable PgBouncer pooler
+  enabled: false
+
+  # -- Pooler instances configuration
+  instances: []
+  # - name: rw
+  #   type: rw
+  #   replicas: 2
+  #   pgbouncer:
+  #     poolMode: transaction
+  #     maxClientConnections: "1000"
+  #     defaultPoolSize: "25"
+  # - name: ro
+  #   type: ro
+  #   replicas: 2
+  #   pgbouncer:
+  #     poolMode: transaction
+  #     defaultPoolSize: "50"
+
+  # -- Default resources for pooler pods
+  defaultResources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # -- Default annotations for pooler (pgbouncer) pod templates.
+  # safe-to-evict lets the cluster autoscaler drain a pooler off an
+  # underutilized autoscaled node (its emptyDir is runtime socket/config, not
+  # data). Without it, poolers pin a fallback node and block scale-down.
+  # Per-instance `podAnnotations` on an entry overrides this default.
+  defaultPodAnnotations:
+    cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+
+  # -- Default affinity for pooler pods
+  defaultAffinity: {}
+
+  # -- Default tolerations for pooler pods
+  defaultTolerations: []
+
+  # -- Default node selector for pooler pods
+  defaultNodeSelector: {}
+
+  # -- Default priorityClassName for pooler pods. Per-instance `priorityClassName`
+  # on an entry overrides it. Empty = key not rendered (cluster default priority).
+  # Poolers sit on the request path; a cluster that defines a high PriorityClass
+  # for request-path workloads sets it here so a pooler replacement never queues
+  # behind ordinary workloads after a node loss.
+  defaultPriorityClassName: ""
+
+  # -- Default topologySpreadConstraints for pooler pods, rendered verbatim (no tpl).
+  # Per-instance `topologySpreadConstraints` on an entry overrides it.
+  # Empty = key not rendered. One default can serve both rw and ro poolers by
+  # selecting every pooler pod and splitting by the pod's own poolerName value.
+  # Never repeat a matchLabelKeys key inside labelSelector: the apiserver merges
+  # matchLabelKeys into the selector at pod creation and rejects the duplicate.
+  #   - maxSkew: 1
+  #     topologyKey: kubernetes.io/hostname
+  #     whenUnsatisfiable: DoNotSchedule
+  #     labelSelector:
+  #       matchLabels: {cnpg.io/podRole: pooler}
+  #     matchLabelKeys: [cnpg.io/poolerName, pod-template-hash]
+  defaultTopologySpreadConstraints: []
+
+# =============================================================================
+# MONITORING
+# =============================================================================
+
+monitoring:
+  # -- Enable monitoring
+  enabled: false
+
+  # -- PodMonitor configuration
+  podMonitor:
+    # -- Create PodMonitor resource
+    enabled: true
+    # -- Use cluster spec instead of separate PodMonitor
+    useClusterSpec: false
+    # -- Namespace for PodMonitor (defaults to release namespace)
+    namespace: ""
+    # -- Additional labels for PodMonitor
+    labels: {}
+    # -- Annotations for PodMonitor
+    annotations: {}
+    # -- Scrape interval
+    interval: 30s
+    # -- Scrape timeout
+    scrapeTimeout: 10s
+    # -- Honor labels from scraped metrics
+    honorLabels: false
+    # -- Relabeling rules
+    relabelings: []
+    # -- Metric relabeling rules
+    metricRelabelings: []
+    # -- Namespace selector
+    namespaceSelector: {}
+    # -- Scheme for scraping
+    scheme: ""
+    # -- TLS configuration
+    tlsConfig: {}
+
+  # -- Pooler PodMonitor configuration
+  poolerPodMonitor:
+    # -- Create PodMonitor for poolers
+    enabled: true
+    # -- Additional labels
+    labels: {}
+    # -- Scrape interval
+    interval: 30s
+    # -- Scrape timeout
+    scrapeTimeout: 10s
+
+  # -- Custom queries ConfigMap reference
+  customQueriesConfigMap: []
+
+  # -- Custom queries Secret reference
+  customQueriesSecret: []
+
+# =============================================================================
+# NETWORK POLICY
+# =============================================================================
+
+networkPolicy:
+  # -- Enable NetworkPolicy
+  enabled: false
+
+  # -- Allow traffic from specified namespaces
+  allowedNamespaces: []
+  # - name: my-app-namespace
+  #   podSelector:
+  #     app: my-app
+
+  # -- Allow traffic from pods with these labels
+  allowedPodLabels: {}
+  # app.kubernetes.io/name: my-app
+
+  # -- Allow traffic from CIDRs
+  allowedCIDRs: []
+  # - 10.0.0.0/8
+
+  # -- Allow Prometheus scraping
+  allowPrometheus: true
+  # -- Prometheus namespace
+  prometheusNamespace: ""
+  # -- Prometheus pod selector
+  prometheusPodSelector: {}
+
+  # -- Enable NetworkPolicy for pooler
+  poolerEnabled: true
+
+  # -- Additional ingress rules
+  additionalIngress: []
+
+  # -- Egress configuration
+  egress:
+    # -- Enable egress rules
+    enabled: true
+    # -- Allow DNS resolution
+    allowDNS: true
+    # -- Allow cloud provider access (for backups)
+    allowCloudProvider: true
+    # -- Additional egress rules
+    additionalEgress: []
+
+# =============================================================================
+# CERTIFICATES
+# =============================================================================
+
+certificates:
+  # -- Server CA secret name
+  serverCASecret: ""
+  # -- Server TLS secret name
+  serverTLSSecret: ""
+  # -- Client CA secret name
+  clientCASecret: ""
+  # -- Replication TLS secret name
+  replicationTLSSecret: ""
+
+# =============================================================================
+# SERVICE ACCOUNT
+# =============================================================================
+
+serviceAccount:
+  # -- Create service account
+  create: true
+  # -- Service account name
+  name: ""
+  # -- Annotations (e.g., for Workload Identity)
+  annotations: {}
+  # iam.gke.io/gcp-service-account: postgres-backup@project.iam.gserviceaccount.com
+
+# =============================================================================
+# EXTERNAL SECRETS
+# =============================================================================
+
+externalSecrets:
+  # -- Enable External Secrets integration
+  enabled: false
+
+  # -- Secrets provider: gcpsm, aws, vault or azurekv. Required when enabled.
+  provider: ""
+
+  # -- Refresh interval for secrets
+  refreshInterval: "6h"
+
+  # -- Use existing SecretStore
+  secretStore:
+    # -- Existing SecretStore name (if set, won't create new one)
+    name: ""
+    # -- SecretStore kind
+    kind: SecretStore
+    # -- Annotations for SecretStore
+    annotations: {}
+
+  # -- GCP Secret Manager configuration
+  gcp:
+    # -- GCP project ID
+    projectID: ""
+    # -- Authentication configuration
+    auth: {}
+    # workloadIdentity:
+    #   clusterLocation: us-central1-a
+    #   clusterName: my-cluster
+    #   serviceAccountName: external-secrets
+
+  # -- AWS Secrets Manager configuration
+  aws:
+    # -- AWS region
+    region: ""
+    # -- AWS service: SecretsManager or ParameterStore
+    service: SecretsManager
+    # -- IAM role ARN
+    role: ""
+    # -- Authentication configuration
+    auth: {}
+
+  # -- HashiCorp Vault configuration
+  vault:
+    # -- Vault server URL
+    server: ""
+    # -- Secrets path
+    path: "secret"
+    # -- API version
+    version: "v2"
+    # -- Authentication configuration
+    auth: {}
+
+  # -- Azure Key Vault configuration
+  azure:
+    # -- Key Vault URL
+    vaultUrl: ""
+    # -- Tenant ID
+    tenantId: ""
+    # -- Authentication configuration
+    auth: {}
+
+  # -- Superuser secret reference
+  superuserSecret: {}
+  # key: postgres/superuser-password
+  # property: password
+
+  # -- App user secret reference
+  appUserSecret: {}
+  # key: postgres/app-user-password
+  # property: password
+
+# =============================================================================
+# MANAGED ROLES
+# =============================================================================
+
+managed:
+  # -- Enable managed roles
+  enabled: false
+  # -- Role definitions
+  roles: []
+  # - name: readonly
+  #   ensure: present
+  #   login: true
+  #   passwordSecret:
+  #     name: readonly-password
+
+# =============================================================================
+# EXTERNAL CLUSTERS
+# =============================================================================
+
+# -- External cluster definitions (for recovery or replica clusters)
+externalClusters: []
+# - name: source-cluster
+#   connectionParameters:
+#     host: source.example.com
+#     user: streaming_replica
+#     dbname: postgres
+#   password:
+#     name: source-cluster-password
+#     key: password
+
+# =============================================================================
+# ADDITIONAL CONFIGURATION
+# =============================================================================
+
+# -- Additional labels for all resources
+commonLabels: {}
+
+# -- Additional annotations for all resources
+commonAnnotations: {}
+
+# -- Additional environment variables
+env: []
+# - name: TZ
+#   value: UTC
+
+# -- Additional environment variables from ConfigMaps/Secrets
+envFrom: []
+
+# =============================================================================
+# REPLICA AUTO-RECOVERY (for preemptible nodes)
+# =============================================================================
+# Automatically detects and recovers stuck replicas caused by node preemption.
+# When a node is preempted mid-write, the replica's PVC can become corrupted.
+# This CronJob detects replicas in CrashLoopBackOff and deletes their PVCs
+# so CloudNativePG can rebuild them fresh from the primary.
+
+replicaRecovery:
+  # -- Enable automatic replica recovery
+  enabled: false
+  # -- CronJob schedule (default: every 5 minutes)
+  schedule: "*/5 * * * *"
+  # -- Minimum restart count before triggering recovery
+  # Prevents recovering pods that are just slow to start
+  minRestarts: 5
+  # -- Image for the recovery job. It needs the Kubernetes CLI and a POSIX shell.
+  image: "alpine/k8s:1.33.5"

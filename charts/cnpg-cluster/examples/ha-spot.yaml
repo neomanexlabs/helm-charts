@@ -1,0 +1,80 @@
+# ---------------------------------------------------------------------------
+# High availability on spot or preemptible nodes.
+#
+# Three instances spread across nodes, immediate failover, PVC reuse after a
+# node is reclaimed, a read-write PgBouncer pooler, daily backups to an object
+# store and the replica recovery job. Replace the bucket and the service
+# account annotation before installing.
+#
+#   helm install my-postgres ./charts/cnpg-cluster -f examples/ha-spot.yaml
+# ---------------------------------------------------------------------------
+
+instances: 3
+
+bootstrap:
+  initdb:
+    database: app
+    owner: app
+
+storage:
+  size: 20Gi
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+affinity:
+  enablePodAntiAffinity: true
+  topologyKey: kubernetes.io/hostname
+  podAntiAffinityType: preferred
+  # Let the instances run on tainted spot nodes. Use the taint your nodes carry.
+  tolerations:
+    - key: cloud.google.com/gke-spot
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+
+failover:
+  delay: 0
+
+maintenance:
+  reusePVC: true
+
+pooler:
+  enabled: true
+  instances:
+    - name: rw
+      type: rw
+      replicas: 2
+      pgbouncer:
+        poolMode: transaction
+        maxClientConnections: "1000"
+        defaultPoolSize: "25"
+  defaultTolerations:
+    - key: cloud.google.com/gke-spot
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+
+backup:
+  enabled: true
+  provider: gcs
+  retentionPolicy: "14d"
+  gcs:
+    bucket: my-postgres-backups
+    gkeEnvironment: true
+
+scheduledBackup:
+  enabled: true
+  schedule: "0 0 2 * * *"
+
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: postgres-backup@my-project.iam.gserviceaccount.com
+
+replicaRecovery:
+  enabled: true

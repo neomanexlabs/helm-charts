@@ -1,0 +1,19 @@
+# External Secrets fixture for render-check H: both credentials come from an
+# existing ClusterSecretStore, so the chart renders ExternalSecrets and no
+# Secret of its own.
+auth:
+  superuser:
+    enabled: true
+  appUser:
+    enabled: true
+    username: app
+
+externalSecrets:
+  enabled: true
+  secretStore:
+    name: example-store
+    kind: ClusterSecretStore
+  superuserSecret:
+    key: example-postgres-superuser
+  appUserSecret:
+    key: example-postgres-app

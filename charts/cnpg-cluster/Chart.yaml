@@ -1,0 +1,67 @@
+apiVersion: v2
+name: cnpg-cluster
+description: Runs a CloudNativePG PostgreSQL cluster on Kubernetes, tuned to stay available on spot and preemptible nodes, with backups, PgBouncer pooling and automatic recovery of stuck replicas.
+
+type: application
+version: 1.0.0
+appVersion: "1.29.1"
+kubeVersion: ">=1.25.0-0"
+
+keywords:
+  - postgresql
+  - postgres
+  - cloudnative-pg
+  - cnpg
+  - high-availability
+  - spot-instances
+  - pgbouncer
+  - backup
+
+home: https://neomanex.com
+
+sources:
+  - https://github.com/neomanexlabs/helm-charts
+  - https://github.com/cloudnative-pg/cloudnative-pg
+
+maintainers:
+  - name: Neomanex
+    url: https://neomanex.com/contact
+
+annotations:
+  artifacthub.io/license: MIT
+  artifacthub.io/category: database
+  artifacthub.io/operator: "false"
+  artifacthub.io/prerelease: "false"
+  artifacthub.io/changes: |
+    - kind: added
+      description: First public release. Renders a CloudNativePG Cluster with optional PgBouncer poolers, scheduled backups to GCS, S3 or Azure, PodMonitors, NetworkPolicies and External Secrets Operator integration
+    - kind: added
+      description: Optional replica recovery CronJob that rebuilds replicas stuck in CrashLoopBackOff, removes orphaned instance pods and fails loudly when the read-write service has no endpoints
+    - kind: fixed
+      description: An S3 backup with a region set no longer renders the s3Credentials key twice
+    - kind: fixed
+      description: A pooler entry without a pgbouncer block renders with the documented defaults instead of failing
+    - kind: fixed
+      description: Azure backups write to https://<storageAccount>.blob.core.windows.net/<container>/<path>, the address Barman accepts, instead of an azure:// path
+    - kind: fixed
+      description: An application user secret supplied through auth.appUser or externalSecrets.appUserSecret is passed to initdb, so the owner gets that password instead of a generated one
+    - kind: changed
+      description: Superuser access is off by default, and when it is on without a supplied secret the operator generates one instead of the cluster waiting for a secret that never appears
+  artifacthub.io/links: |
+    - name: Website
+      url: https://neomanex.com
+    - name: Contact
+      url: https://neomanex.com/contact
+    - name: ConvOps
+      url: https://convops.app
+    - name: Gnosari
+      url: https://gnosari.com
+    - name: Source
+      url: https://github.com/neomanexlabs/helm-charts
+    - name: CloudNativePG documentation
+      url: https://cloudnative-pg.io/documentation/current/
+  artifacthub.io/images: |
+    - name: postgresql
+      image: ghcr.io/cloudnative-pg/postgresql:17
+    - name: recovery
+      image: alpine/k8s:1.33.5

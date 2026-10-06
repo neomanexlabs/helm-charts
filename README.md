@@ -8,6 +8,7 @@ Public Helm charts published by [Neomanex](https://neomanex.com), an AI-native c
 
 | Chart | Version | Description |
 |-------|---------|-------------|
+| [cnpg-cluster](charts/cnpg-cluster) | 1.0.0 | Runs a CloudNativePG PostgreSQL cluster tuned for spot and preemptible nodes, with backups, PgBouncer pooling and automatic recovery of stuck replicas. |
 | [opencode](charts/opencode) | 1.4.5 | Runs the OpenCode coding agent as a service in your cluster: web UI and HTTP API behind your own ingress, one persistent workspace per git repository. |
 | [redis](charts/redis) | 1.1.0 | Runs Redis on Kubernetes with Sentinel high availability, automatic failback of the master role and role-aware readiness. |
 

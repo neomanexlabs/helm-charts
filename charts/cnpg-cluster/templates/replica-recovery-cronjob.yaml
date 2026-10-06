@@ -1,0 +1,233 @@
+{{/*
+================================================================================
+PostgreSQL Auto-Recovery CronJob
+================================================================================
+Detects and recovers three failure modes on preemptible nodes.
+
+1. Serving check. Reports CRITICAL and exits non-zero when the read-write
+   service has no endpoints. Restart counts alone cannot see a total outage:
+   a cluster with zero instances also has zero stuck replicas, so a check
+   built on restart counts alone would pass while every client fails to connect.
+
+2. Orphan reap. Deletes instance pods that are Pending, absent from the
+   cluster's declared instanceNames, and missing their data PVC. Such a pod
+   can never schedule, and CNPG holds it in instancesStatus.failed and stops
+   reconciling, wedging the cluster until it is removed by hand. The PVC is
+   never touched here.
+
+3. Stuck replica rebuild. When a node is preempted mid-write a replica's PVC
+   can become corrupted. Replicas in CrashLoopBackOff past the restart
+   threshold have their PVCs deleted so CloudNativePG rebuilds them from the
+   primary. This step is also what can strand an orphan for step 2 to clean
+   up, since CNPG may recreate the pod against the PVC it just lost.
+*/}}
+{{- if .Values.replicaRecovery.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "cnpg-cluster.clusterName" . }}-recovery
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cnpg-cluster.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "cnpg-cluster.clusterName" . }}-recovery
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cnpg-cluster.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "delete", "patch"]
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list"]
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "cnpg-cluster.clusterName" . }}-recovery
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cnpg-cluster.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "cnpg-cluster.clusterName" . }}-recovery
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cnpg-cluster.clusterName" . }}-recovery
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "cnpg-cluster.clusterName" . }}-recovery
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cnpg-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: recovery
+spec:
+  schedule: {{ .Values.replicaRecovery.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            {{- include "cnpg-cluster.labels" . | nindent 12 }}
+            app.kubernetes.io/component: recovery
+        spec:
+          serviceAccountName: {{ include "cnpg-cluster.clusterName" . }}-recovery
+          restartPolicy: Never
+          containers:
+            - name: recovery
+              image: {{ .Values.replicaRecovery.image | default "alpine/k8s:1.33.5" }}
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  CLUSTER_NAME="{{ include "cnpg-cluster.clusterName" . }}"
+                  NAMESPACE="{{ .Release.Namespace }}"
+                  MIN_RESTARTS={{ .Values.replicaRecovery.minRestarts | default 5 }}
+
+                  echo "=== PostgreSQL Recovery Check ==="
+                  echo "Cluster: $CLUSTER_NAME"
+                  echo "Namespace: $NAMESPACE"
+                  echo "Min restarts threshold: $MIN_RESTARTS"
+                  echo ""
+
+                  OUTAGE=0
+                  ORPHANS=0
+
+                  # Get current primary to avoid touching it
+                  PRIMARY=$(kubectl get cluster $CLUSTER_NAME -n $NAMESPACE -o jsonpath='{.status.currentPrimary}' 2>/dev/null || echo "")
+                  echo "Current primary: $PRIMARY"
+
+                  # Instances the operator currently declares. A pod absent from this
+                  # list is not a cluster member, whatever its name suggests.
+                  INSTANCE_NAMES=$(kubectl get cluster $CLUSTER_NAME -n $NAMESPACE -o jsonpath='{.status.instanceNames[*]}' 2>/dev/null || echo "")
+                  echo "Declared instances: $INSTANCE_NAMES"
+                  echo ""
+
+                  # --- Serving check -------------------------------------------------
+                  # Replica restart counts say nothing about whether the database is
+                  # reachable: a cluster with zero instances has zero stuck replicas.
+                  # The read-write service having no endpoints is the unambiguous signal
+                  # that PostgreSQL is DOWN.
+                  echo "Checking read-write service endpoints..."
+                  RW_ADDRS=$(kubectl get endpoints $CLUSTER_NAME-rw -n $NAMESPACE -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
+                  RW_COUNT=$(echo "$RW_ADDRS" | wc -w | tr -d " ")
+                  if [ "$RW_COUNT" -eq 0 ]; then
+                    echo "CRITICAL: $CLUSTER_NAME-rw has NO endpoints. PostgreSQL is not serving."
+                    OUTAGE=1
+                  else
+                    echo "OK: $CLUSTER_NAME-rw has $RW_COUNT endpoint(s): $RW_ADDRS"
+                  fi
+                  echo ""
+
+                  # --- Orphan reap ---------------------------------------------------
+                  # A pod that is Pending, is not a declared instance, and whose data PVC
+                  # no longer exists can never be scheduled: nothing recreates a deleted
+                  # PVC. CNPG holds such a pod in .status.instancesStatus.failed and
+                  # refuses to progress, wedging the whole cluster until the pod is
+                  # removed by hand. Delete the POD only, never the PVC.
+                  echo "Checking for orphaned instance pods..."
+                  PENDING_PODS=$(kubectl get pods -n $NAMESPACE \
+                    -l cnpg.io/cluster=$CLUSTER_NAME,cnpg.io/podRole=instance \
+                    -o jsonpath='{range .items[?(@.status.phase=="Pending")]}{.metadata.name}{"\n"}{end}' 2>/dev/null || echo "")
+
+                  for POD in $PENDING_PODS; do
+                    [ -n "$POD" ] || continue
+                    case " $INSTANCE_NAMES " in
+                      *" $POD "*) echo "  $POD is Pending but is a declared instance - leaving it alone"; continue ;;
+                    esac
+                    if kubectl get pvc "$POD" -n $NAMESPACE >/dev/null 2>&1; then
+                      echo "  $POD is Pending and undeclared but its PVC exists - leaving it alone"
+                      continue
+                    fi
+                    echo "  ORPHAN: $POD is Pending, undeclared, and PVC $POD is missing - it can never schedule"
+                    echo "  Deleting pod $POD (PVC untouched)"
+                    kubectl delete pod "$POD" -n $NAMESPACE --ignore-not-found 2>/dev/null || true
+                    ORPHANS=$((ORPHANS + 1))
+                  done
+                  if [ "$ORPHANS" -eq 0 ]; then
+                    echo "  No orphaned instance pods found."
+                  else
+                    echo "  Reaped $ORPHANS orphaned pod(s). CNPG should resume reconciling."
+                  fi
+                  echo ""
+
+                  # --- Stuck replica recovery ----------------------------------------
+                  echo "Checking for stuck replicas..."
+                  STUCK_PODS=$(kubectl get pods -n $NAMESPACE \
+                    -l cnpg.io/cluster=$CLUSTER_NAME,cnpg.io/podRole=instance \
+                    -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[0].restartCount}{"\t"}{.status.containerStatuses[0].state.waiting.reason}{"\n"}{end}' 2>/dev/null | \
+                    awk -v min="$MIN_RESTARTS" -v primary="$PRIMARY" \
+                      '$1 != primary && $2+0 >= min && $3 == "CrashLoopBackOff" {print $1}')
+
+                  if [ -z "$STUCK_PODS" ]; then
+                    echo "No stuck replicas found."
+                  else
+                    echo "Found stuck replicas: $STUCK_PODS"
+                    echo ""
+
+                    for POD in $STUCK_PODS; do
+                      echo "=== Recovering $POD ==="
+
+                      # Double-check this is not the primary
+                      if [ "$POD" = "$PRIMARY" ]; then
+                        echo "SKIPPING: $POD is the primary!"
+                        continue
+                      fi
+
+                      # Get PVC names
+                      DATA_PVC="$POD"
+                      WAL_PVC="$POD-wal"
+
+                      echo "Deleting pod: $POD"
+                      kubectl delete pod $POD -n $NAMESPACE --force --grace-period=0 2>/dev/null || true
+
+                      # Remove finalizers from PVCs if stuck
+                      echo "Removing finalizers from PVCs..."
+                      kubectl patch pvc $DATA_PVC -n $NAMESPACE -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+                      kubectl patch pvc $WAL_PVC -n $NAMESPACE -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+
+                      echo "Deleting PVCs: $DATA_PVC, $WAL_PVC"
+                      kubectl delete pvc $DATA_PVC $WAL_PVC -n $NAMESPACE --force --grace-period=0 2>/dev/null || true
+
+                      echo "Recovery triggered for $POD. CNPG will create a new replica."
+                      echo ""
+                    done
+                  fi
+
+                  echo ""
+                  echo "=== Verdict ==="
+                  if [ "$OUTAGE" -eq 1 ]; then
+                    echo "FAILED: PostgreSQL is not serving ($CLUSTER_NAME-rw has no endpoints)."
+                    echo "Orphans reaped this run: $ORPHANS"
+                    exit 1
+                  fi
+                  echo "PASS: PostgreSQL is serving. Orphans reaped this run: $ORPHANS"
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+{{- end }}

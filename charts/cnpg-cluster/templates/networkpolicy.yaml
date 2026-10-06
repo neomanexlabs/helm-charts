@@ -1,0 +1,264 @@
+{{/*
+================================================================================
+NetworkPolicy for CloudNativePG Cluster
+================================================================================
+Restricts network access to PostgreSQL pods for security.
+
+Features:
+- Configurable allowed namespaces
+- Configurable allowed pod selectors
+- CIDR-based access rules
+- Egress rules for backups and DNS
+*/}}
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: {{ include "cnpg-cluster.networkPolicy.apiVersion" . }}
+kind: NetworkPolicy
+metadata:
+  name: {{ include "cnpg-cluster.clusterName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cnpg-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: network-policy
+  {{- with (include "cnpg-cluster.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  # Apply to all PostgreSQL pods in this cluster
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: {{ include "cnpg-cluster.clusterName" . }}
+
+  policyTypes:
+    - Ingress
+    {{- if .Values.networkPolicy.egress.enabled }}
+    - Egress
+    {{- end }}
+
+  # ---------------------------------------------------------------------------
+  # INGRESS RULES
+  # ---------------------------------------------------------------------------
+  ingress:
+    # Allow PostgreSQL traffic from within the cluster (replication)
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ include "cnpg-cluster.clusterName" . }}
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # Allow from CloudNativePG operator
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+        - namespaceSelector:
+            matchLabels:
+              name: cnpg-system
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 9187  # Metrics
+
+    # Allow from Prometheus (metrics scraping)
+    {{- if .Values.networkPolicy.allowPrometheus }}
+    - from:
+        {{- if .Values.networkPolicy.prometheusNamespace }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.prometheusNamespace }}
+        {{- else }}
+        - namespaceSelector: {}
+        {{- end }}
+          {{- if .Values.networkPolicy.prometheusPodSelector }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.prometheusPodSelector | nindent 14 }}
+          {{- end }}
+      ports:
+        - protocol: TCP
+          port: 9187
+    {{- end }}
+
+    # Allow from pooler pods
+    {{- if .Values.pooler.enabled }}
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: cnpg.io/poolerName
+                operator: Exists
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- end }}
+
+    # Allow from specified namespaces
+    {{- range .Values.networkPolicy.allowedNamespaces }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .name }}
+          {{- if .podSelector }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .podSelector | nindent 14 }}
+          {{- end }}
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- end }}
+
+    # Allow from pods with specific labels
+    {{- if .Values.networkPolicy.allowedPodLabels }}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.allowedPodLabels | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- end }}
+
+    # Allow from specific CIDRs
+    {{- range .Values.networkPolicy.allowedCIDRs }}
+    - from:
+        - ipBlock:
+            cidr: {{ . }}
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- end }}
+
+    # Additional custom ingress rules
+    {{- with .Values.networkPolicy.additionalIngress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+
+  # ---------------------------------------------------------------------------
+  # EGRESS RULES
+  # ---------------------------------------------------------------------------
+  {{- if .Values.networkPolicy.egress.enabled }}
+  egress:
+    # Allow DNS resolution
+    {{- if .Values.networkPolicy.egress.allowDNS }}
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
+
+    # Allow replication within cluster
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ include "cnpg-cluster.clusterName" . }}
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # Allow backup uploads to object storage (HTTPS to any address)
+    {{- if and .Values.backup.enabled .Values.networkPolicy.egress.allowCloudProvider }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+
+    # Additional custom egress rules
+    {{- with .Values.networkPolicy.egress.additionalEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+---
+{{/*
+================================================================================
+NetworkPolicy for PgBouncer Poolers
+================================================================================
+*/}}
+{{- if and .Values.pooler.enabled .Values.networkPolicy.poolerEnabled }}
+apiVersion: {{ include "cnpg-cluster.networkPolicy.apiVersion" . }}
+kind: NetworkPolicy
+metadata:
+  name: {{ include "cnpg-cluster.clusterName" . }}-pooler
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cnpg-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pooler-network-policy
+spec:
+  podSelector:
+    matchExpressions:
+      - key: cnpg.io/poolerName
+        operator: Exists
+
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow from specified namespaces (same as cluster)
+    {{- range .Values.networkPolicy.allowedNamespaces }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .name }}
+          {{- if .podSelector }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .podSelector | nindent 14 }}
+          {{- end }}
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- end }}
+
+    # Allow from pods with specific labels
+    {{- if .Values.networkPolicy.allowedPodLabels }}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.allowedPodLabels | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- end }}
+
+    # Allow Prometheus metrics scraping
+    {{- if .Values.networkPolicy.allowPrometheus }}
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9127
+    {{- end }}
+
+  egress:
+    # Allow connection to PostgreSQL cluster
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ include "cnpg-cluster.clusterName" . }}
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+{{- end }}
+{{- end }}
