@@ -149,7 +149,8 @@ jobs:
               echo "rendering $example"
               helm template t "$chart" -f "$example" > /tmp/example.yaml
               test -s /tmp/example.yaml
-              grep -q 'kind: StatefulSet' /tmp/example.yaml
+              # Each chart's render-check asserts which kinds its examples render.
+              grep -q '^kind: ' /tmp/example.yaml
             done
           done
 
@@ -175,10 +176,9 @@ jobs:
       - name: Identifier check
         run: |
           set -euo pipefail
-          # Pattern list lives here, in the gate, not in a file the scrub could
-          # miss (open-source-publishing.md section 9). render-check.sh is the
-          # one exclusion: it carries these same literals because it runs the
-          # identical check locally.
+          # The pattern list lives here, in the gate itself. render-check.sh is
+          # the one exclusion: it carries these same literals because it runs
+          # the identical check locally.
           if grep -rniE "pkg\.dev|gcr\.io|gitlab\.com|@neomanex\.com" charts/ --exclude=render-check.sh; then
             echo "::error::deployment-specific identifiers found in charts/ (hits above)"
             exit 1
@@ -196,8 +196,9 @@ jobs:
           echo "punctuation check clean"
 
           # Comments must explain themselves. A reference to a documentation
-          # tree that ships elsewhere is meaningless to a chart user.
-          if grep -rn "documentation/" charts/ --exclude=render-check.sh; then
+          # tree that ships elsewhere is meaningless to a chart user. Full
+          # http(s) URLs to public documentation explain themselves and pass.
+          if grep -rnoE "[^[:space:]\"'\`(<]*documentation/" charts/ --exclude=render-check.sh | grep -vE ':[0-9]+:https?://'; then
             echo "::error::reference to an external documentation path found in charts/ (hits above). Rewrite the comment so it stands on its own."
             exit 1
           fi

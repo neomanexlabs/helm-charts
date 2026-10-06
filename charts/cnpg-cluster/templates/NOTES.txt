@@ -1,0 +1,131 @@
+================================================================================
+  CloudNativePG PostgreSQL Cluster - {{ include "cnpg-cluster.clusterName" . }}
+================================================================================
+
+Cluster deployed successfully!
+
+CLUSTER INFORMATION
+-------------------
+  Cluster Name: {{ include "cnpg-cluster.clusterName" . }}
+  Namespace:    {{ .Release.Namespace }}
+  Instances:    {{ .Values.instances }}
+  PostgreSQL:   {{ .Values.postgresql.version | default "17" }}
+  Storage:      {{ .Values.storage.size }}
+
+SERVICES
+--------
+CloudNativePG creates the following services automatically:
+
+  Read-Write (Primary):
+    {{ include "cnpg-cluster.clusterName" . }}-rw.{{ .Release.Namespace }}.svc:5432
+
+  Read-Only (Replicas):
+    {{ include "cnpg-cluster.clusterName" . }}-ro.{{ .Release.Namespace }}.svc:5432
+
+  Any Instance:
+    {{ include "cnpg-cluster.clusterName" . }}-r.{{ .Release.Namespace }}.svc:5432
+
+{{- if .Values.pooler.enabled }}
+
+CONNECTION POOLER (PgBouncer)
+-----------------------------
+{{- range .Values.pooler.instances }}
+  {{ .type | upper }} Pooler:
+    {{ include "cnpg-cluster.clusterName" $ }}-pooler-{{ .type }}.{{ $.Release.Namespace }}.svc:5432
+{{- end }}
+{{- end }}
+
+CREDENTIALS
+-----------
+{{- if .Values.auth.superuser.enabled }}
+  Superuser Secret: {{ include "cnpg-cluster.superuserSecretName" . }}
+    kubectl get secret {{ include "cnpg-cluster.superuserSecretName" . }} -n {{ .Release.Namespace }} -o jsonpath='{.data.password}' | base64 -d
+{{- end }}
+
+{{- if .Values.auth.appUser.enabled }}
+  App User Secret: {{ include "cnpg-cluster.appUserSecretName" . }}
+    kubectl get secret {{ include "cnpg-cluster.appUserSecretName" . }} -n {{ .Release.Namespace }} -o jsonpath='{.data.password}' | base64 -d
+{{- end }}
+
+VERIFY CLUSTER STATUS
+---------------------
+  # Check cluster status
+  kubectl get cluster {{ include "cnpg-cluster.clusterName" . }} -n {{ .Release.Namespace }}
+
+  # Watch cluster events
+  kubectl get events -n {{ .Release.Namespace }} --field-selector involvedObject.name={{ include "cnpg-cluster.clusterName" . }}
+
+  # Check pods
+  kubectl get pods -n {{ .Release.Namespace }} -l cnpg.io/cluster={{ include "cnpg-cluster.clusterName" . }}
+
+  # View cluster details
+  kubectl describe cluster {{ include "cnpg-cluster.clusterName" . }} -n {{ .Release.Namespace }}
+
+CONNECT TO DATABASE
+-------------------
+  # Port-forward to primary
+  kubectl port-forward svc/{{ include "cnpg-cluster.clusterName" . }}-rw -n {{ .Release.Namespace }} 5432:5432
+
+  # Connect with psql
+  psql -h localhost -U postgres -d {{ .Values.bootstrap.initdb.database | default "app" }}
+
+{{- if .Values.backup.enabled }}
+
+BACKUP CONFIGURATION
+--------------------
+  Provider:     {{ .Values.backup.provider }}
+  Destination:  {{ include "cnpg-cluster.backupDestinationPath" . }}
+  Retention:    {{ .Values.backup.retentionPolicy | default "30d" }}
+{{- if .Values.scheduledBackup.enabled }}
+  Schedule:     {{ .Values.scheduledBackup.schedule }}
+{{- end }}
+
+  # List backups
+  kubectl get backups -n {{ .Release.Namespace }} -l cnpg.io/cluster={{ include "cnpg-cluster.clusterName" . }}
+
+  # Trigger manual backup
+  kubectl apply -f - <<EOF
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  name: {{ include "cnpg-cluster.clusterName" . }}-manual-$(date +%Y%m%d%H%M%S)
+  namespace: {{ .Release.Namespace }}
+spec:
+  cluster:
+    name: {{ include "cnpg-cluster.clusterName" . }}
+EOF
+{{- end }}
+
+{{- if .Values.monitoring.enabled }}
+
+MONITORING
+----------
+  PodMonitor: {{ .Values.monitoring.podMonitor.enabled | ternary "Enabled" "Disabled" }}
+  Metrics Port: 9187
+
+  # View metrics
+  kubectl port-forward svc/{{ include "cnpg-cluster.clusterName" . }}-rw -n {{ .Release.Namespace }} 9187:9187
+  curl http://localhost:9187/metrics
+{{- end }}
+
+IMPORTANT FOR PREEMPTIBLE NODES
+-------------------------------
+This cluster is configured for high availability on preemptible nodes:
+
+  - Pod Anti-Affinity: {{ .Values.affinity.enablePodAntiAffinity | ternary "Enabled" "Disabled" }}
+  - Replication Slots: {{ .Values.replicationSlots.highAvailability.enabled | ternary "Enabled" "Disabled" }}
+  - PVC Reuse: {{ .Values.maintenance.reusePVC | default true | ternary "Enabled" "Disabled" }}
+  - Failover Delay: {{ .Values.failover.delay | default 0 }}s
+
+When a node is preempted:
+1. The affected pod will be terminated
+2. CloudNativePG will automatically reschedule it on another node
+3. The PVC will be reattached (reusePVC=true)
+4. If it was the primary, automatic failover will promote a replica
+
+USEFUL LINKS
+------------
+  CloudNativePG Docs: https://cloudnative-pg.io/documentation/
+  API Reference: https://cloudnative-pg.io/documentation/current/cloudnative-pg.v1/
+
+================================================================================

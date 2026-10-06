@@ -1,0 +1,111 @@
+{{/*
+================================================================================
+Prometheus PodMonitor for CloudNativePG Cluster
+================================================================================
+Enables Prometheus scraping of PostgreSQL metrics.
+
+Note: CloudNativePG can create PodMonitors automatically via the Cluster spec,
+but this template provides more control over labels and configuration.
+*/}}
+{{- if and .Values.monitoring.enabled .Values.monitoring.podMonitor.enabled (not .Values.monitoring.podMonitor.useClusterSpec) }}
+apiVersion: {{ include "cnpg-cluster.podMonitor.apiVersion" . }}
+kind: PodMonitor
+metadata:
+  name: {{ include "cnpg-cluster.clusterName" . }}
+  namespace: {{ .Values.monitoring.podMonitor.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "cnpg-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    {{- with .Values.monitoring.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.monitoring.podMonitor.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  # Select pods from the CloudNativePG cluster
+  selector:
+    matchLabels:
+      cnpg.io/cluster: {{ include "cnpg-cluster.clusterName" . }}
+
+  # Namespace selector (if monitoring from different namespace)
+  {{- if .Values.monitoring.podMonitor.namespaceSelector }}
+  namespaceSelector:
+    {{- toYaml .Values.monitoring.podMonitor.namespaceSelector | nindent 4 }}
+  {{- else }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  {{- end }}
+
+  # Metrics endpoint configuration
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      {{- with .Values.monitoring.podMonitor.interval }}
+      interval: {{ . }}
+      {{- end }}
+      {{- with .Values.monitoring.podMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+      {{- with .Values.monitoring.podMonitor.honorLabels }}
+      honorLabels: {{ . }}
+      {{- end }}
+      {{- with .Values.monitoring.podMonitor.relabelings }}
+      relabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.monitoring.podMonitor.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.monitoring.podMonitor.scheme }}
+      scheme: {{ . }}
+      {{- end }}
+      {{- with .Values.monitoring.podMonitor.tlsConfig }}
+      tlsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+---
+{{/*
+================================================================================
+Prometheus PodMonitor for PgBouncer Poolers
+================================================================================
+*/}}
+{{- if and .Values.monitoring.enabled .Values.monitoring.podMonitor.enabled .Values.pooler.enabled .Values.monitoring.poolerPodMonitor.enabled }}
+{{- range .Values.pooler.instances }}
+---
+apiVersion: {{ include "cnpg-cluster.podMonitor.apiVersion" $ }}
+kind: PodMonitor
+metadata:
+  name: {{ include "cnpg-cluster.clusterName" $ }}-pooler-{{ .type }}
+  namespace: {{ $.Values.monitoring.podMonitor.namespace | default $.Release.Namespace }}
+  labels:
+    {{- include "cnpg-cluster.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: pooler-monitoring
+    cnpg.io/poolerType: {{ .type }}
+    {{- with $.Values.monitoring.poolerPodMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/poolerName: {{ include "cnpg-cluster.clusterName" $ }}-pooler-{{ .type }}
+
+  namespaceSelector:
+    matchNames:
+      - {{ $.Release.Namespace }}
+
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      {{- with $.Values.monitoring.poolerPodMonitor.interval }}
+      interval: {{ . }}
+      {{- end }}
+      {{- with $.Values.monitoring.poolerPodMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+{{- end }}
+{{- end }}

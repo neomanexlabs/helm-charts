@@ -1,0 +1,90 @@
+{{- /*
+Source template for README.md. Hand-written prose lives here; the values
+reference is generated from values.yaml comments by helm-docs.
+
+  helm-docs --chart-search-root charts
+
+CI runs `helm-docs --check` (lint-test.yml), so an edit to values.yaml or to
+this template that is not regenerated fails the pull request.
+*/ -}}
+# CloudNativePG Cluster Helm Chart
+
+Runs a [CloudNativePG](https://cloudnative-pg.io) PostgreSQL cluster on Kubernetes from one values file: the `Cluster`, optional PgBouncer poolers, scheduled backups to GCS, S3 or Azure, PodMonitors, NetworkPolicies and External Secrets Operator integration. Its defaults are tuned for clusters that run on spot or preemptible nodes, where a node can disappear at any minute: immediate failover, PVC reuse, soft anti-affinity, and an optional recovery job that rebuilds replicas a reclaimed node left broken. It is for teams who already run the CloudNativePG operator and want one chart for every database instead of hand-written manifests per cluster. It is published by [Neomanex](https://neomanex.com), an AI-native company, and it is the chart we run our own production PostgreSQL on.
+
+```sh
+helm install my-postgres oci://ghcr.io/neomanexlabs/charts/cnpg-cluster --version {{ .Version }} -f my-values.yaml
+```
+
+## Add the repository
+
+```sh
+helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
+helm repo update
+helm install my-postgres neomanexlabs/cnpg-cluster --version {{ .Version }} -f my-values.yaml
+```
+
+Both install paths serve the identical package.
+
+## Requirements
+
+| Requirement | Detail |
+|-------------|--------|
+| Kubernetes | 1.25 or newer, with a StorageClass that supports dynamic provisioning |
+| CloudNativePG operator | Installed cluster-wide before this chart. The chart renders `postgresql.cnpg.io/v1` resources only and does not install CRDs. Tested with operator 1.28 and 1.29 |
+| External Secrets Operator | Optional, only for `externalSecrets.enabled` |
+| Prometheus Operator | Optional, only for the PodMonitor that `monitoring.enabled` renders |
+| Object storage | Optional, only for backups: a GCS bucket, an S3 (or S3-compatible) bucket, or an Azure Blob Storage container |
+
+## Quick start
+
+[`examples/minimal.yaml`](examples/minimal.yaml) installs a single instance with no backups and no pooler. [`examples/ha-spot.yaml`](examples/ha-spot.yaml) installs the production topology: three instances, a read-write pooler, daily backups to GCS through Workload Identity and the replica recovery job.
+
+```sh
+helm template my-postgres neomanexlabs/cnpg-cluster -f examples/ha-spot.yaml
+```
+
+Read the render before installing. The high availability example names a placeholder bucket and service account; replace both.
+
+### Credentials
+
+By default CloudNativePG creates the database owner with a generated password and stores it in the `<cluster>-app` secret. To choose the password, supply it through `auth.appUser.password`, `auth.appUser.existingSecret` or `externalSecrets.appUserSecret`, and name that secret in `bootstrap.initdb.secret.name` (`<cluster>-app-user` unless you set `auth.appUser.existingSecret`). `auth.appUser.username` must match `bootstrap.initdb.owner`. When `bootstrap.initdb.secret` is set, the operator uses that secret instead of generating `<cluster>-app`.
+
+Superuser access is off by default, as in CloudNativePG. With `auth.superuser.enabled: true` and nothing else, the operator generates the `<cluster>-superuser` secret. Set `auth.superuser.password`, `auth.superuser.existingSecret` or `externalSecrets.superuserSecret` to supply it yourself.
+
+### Client access
+
+When `postgresql.pg_hba` is empty, the cluster accepts scram-sha-256 password logins from the RFC 1918 private ranges only. Set your own list to replace that rule set entirely.
+
+## How it works
+
+The chart renders one CloudNativePG `Cluster` plus the optional resources you turn on. Four behaviours are worth knowing:
+
+- **Spot-friendly defaults.** `failover.delay: 0` promotes a replica as soon as the primary is lost, `maintenance.reusePVC: true` lets an instance come back on its own volume after a node is reclaimed, and anti-affinity is `preferred` so a smaller node pool still schedules every instance. Set `affinity.tolerations` and `pooler.defaultTolerations` to the taint your spot nodes carry.
+- **Replica recovery.** A node reclaimed mid-write can leave a replica in CrashLoopBackOff on a damaged volume, and CloudNativePG keeps restarting it. With `replicaRecovery.enabled`, a CronJob finds replicas past `replicaRecovery.minRestarts` restarts, deletes the pod and its PVCs, and lets the operator rebuild the replica from the primary. It never touches the current primary. The same job deletes instance pods that are Pending, no longer declared by the cluster, and missing their PVC, because those can never schedule. Every run ends with a verdict and fails when the read-write Service has no endpoints, so a broken database shows up as a failed Job.
+- **Poolers.** Each entry in `pooler.instances` renders a PgBouncer `Pooler` of type `rw` or `ro`. Pooler pods take their resources, affinity, tolerations, node selector, priority class and topology spread from the `pooler.default*` values unless the entry overrides them. Pooler pods carry the chart version label, so any chart upgrade rolls them; PostgreSQL instance pods are not restarted by a chart upgrade.
+- **Backups.** `backup.*` configures the Barman object store on the cluster (WAL archiving plus base backups) and `scheduledBackup.*` renders the `ScheduledBackup`. GCS can authenticate through GKE Workload Identity (`backup.gcs.gkeEnvironment: true` plus the service account annotation), S3 and Azure through a secret the chart can create or one you name.
+
+## Examples
+
+| File | What it installs |
+|------|------------------|
+| [`examples/minimal.yaml`](examples/minimal.yaml) | One instance, no backups, no pooler, no PodDisruptionBudget |
+| [`examples/ha-spot.yaml`](examples/ha-spot.yaml) | Three instances on tainted spot nodes, read-write pooler, daily GCS backups through Workload Identity, replica recovery |
+
+{{ template "chart.valuesSection" . }}
+
+## Support
+
+Issues are the support channel: https://github.com/neomanexlabs/helm-charts/issues. For anything else, including security reports, use https://neomanex.com/contact.
+
+## About Neomanex
+
+Neomanex is an AI-native company. We run our own business on an AI Operating Model,
+publish the evidence, and help other companies become AI native: agents, operations,
+and the infrastructure underneath them, built and governed in production.
+
+This project is part of that work. It is the same code we run ourselves.
+
+- Website: https://neomanex.com
+- Work with us: https://neomanex.com/contact
+- Products: [ConvOps](https://convops.app) (AI-first operations) and [Gnosari](https://gnosari.com) (conversational data collection: AI agents that turn conversations into structured data)

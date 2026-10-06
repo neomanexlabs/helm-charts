@@ -1,0 +1,43 @@
+# Scheduling fixture for render-check D: instances and poolers on tainted
+# dedicated nodes. The rw pooler takes every pooler default; the ro pooler
+# overrides tolerations and priority class and has no pgbouncer block at all.
+instances: 3
+
+affinity:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: postgres
+      effect: NoSchedule
+
+pooler:
+  enabled: true
+  instances:
+    - name: rw
+      type: rw
+      replicas: 2
+      pgbouncer:
+        poolMode: session
+    - name: ro
+      type: ro
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: readonly
+          effect: NoSchedule
+      priorityClassName: low-priority
+  defaultTolerations:
+    - key: dedicated
+      operator: Equal
+      value: postgres
+      effect: NoSchedule
+  defaultPriorityClassName: high-priority
+  defaultTopologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          cnpg.io/podRole: pooler
+      matchLabelKeys:
+        - cnpg.io/poolerName

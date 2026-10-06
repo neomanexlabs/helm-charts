@@ -1,0 +1,33 @@
+# ---------------------------------------------------------------------------
+# Minimal PostgreSQL: one instance, no backups, no pooler.
+#
+# Good for development or CI. A single instance has no replica to fail over
+# to, so the PodDisruptionBudget is off here and a node drain simply restarts
+# the database. Use examples/ha-spot.yaml for production.
+#
+#   helm install my-postgres ./charts/cnpg-cluster -f examples/minimal.yaml
+# ---------------------------------------------------------------------------
+
+instances: 1
+
+cluster:
+  enablePDB: false
+
+bootstrap:
+  initdb:
+    database: app
+    owner: app
+
+storage:
+  size: 5Gi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+affinity:
+  enablePodAntiAffinity: false
