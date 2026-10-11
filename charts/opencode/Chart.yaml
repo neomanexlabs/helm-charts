@@ -3,8 +3,8 @@ name: opencode
 description: Runs the OpenCode coding agent as a long-lived service in your cluster, web UI and HTTP API behind your own ingress, one persistent workspace per git repository, with per-workspace config, MCP servers and git sync.
 
 type: application
-version: 1.4.5
-appVersion: "1.14.48"
+version: 1.4.6
+appVersion: "1.19.0"
 
 keywords:
   - opencode
@@ -27,10 +27,12 @@ maintainers:
 
 annotations:
   artifacthub.io/changes: |
-    - kind: changed
-      description: The chart description and README lead with what the chart is for, running the OpenCode web UI and HTTP API in a cluster so the agent is reachable from any browser
     - kind: added
-      description: A section covering what running the agent in a cluster gives you, including the CORS setting a publicly exposed web UI needs
+      description: config.enabledProviders and workspaces[].enabledProviders render OpenCode enabled_providers, so a workspace loads only the providers you list
+    - kind: added
+      description: Per-provider whitelist and blacklist, globally on config.providers and per workspace through workspaces[].providerModels, limit which models the model picker shows
+    - kind: changed
+      description: The default image moves to OpenCode 1.19.0
   artifacthub.io/links: |
     - name: Website
       url: https://neomanex.com

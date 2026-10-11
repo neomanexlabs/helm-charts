@@ -15,7 +15,7 @@ image:
   # -- Container image repository
   repository: ghcr.io/neomanexlabs/opencode
   # -- Image tag (pin to a published image tag)
-  tag: "1.14.48"
+  tag: "1.19.0"
   # -- Pull policy
   pullPolicy: IfNotPresent
 
@@ -102,7 +102,7 @@ gitlab:
 #
 # Optional per-workspace overrides (fall back to top-level values):
 #   image:
-#     tag: "1.14.48"           # Override image tag for this workspace
+#     tag: "1.19.0"            # Override image tag for this workspace
 #   resources: {}              # Override container resources
 #   ingress:
 #     host: ws.example.com     # Per-workspace ingress host
@@ -137,6 +137,13 @@ gitlab:
 #   tools: {}                  # Per-workspace MCP tool exposure glob map, merged
 #                              # over global config.tools (workspace key wins per
 #                              # key). See config.tools below for the format.
+#   enabledProviders: []       # Providers this workspace loads (OpenCode
+#                              # `enabled_providers`). Replaces the global
+#                              # config.enabledProviders. Empty = global list.
+#   providerModels: {}         # Per-provider model filter for this workspace,
+#                              # e.g. {kimi-for-coding: {whitelist: [k3]}}.
+#                              # An entry replaces that provider's global
+#                              # whitelist / blacklist. See config.providers.
 #
 # Example:
 #   workspaces:
@@ -190,7 +197,23 @@ config:
   #       models:
   #         glm-4.6:
   #           name: GLM-4.6
+  #
+  # Any provider can also limit which of its models the model picker lists,
+  # with whitelist (only these) or blacklist (all but these), by model id:
+  #   providers:
+  #     anthropic:
+  #       secretKey: anthropic-api-key
+  #       whitelist: [claude-sonnet-4-6, claude-haiku-4-5]
   providers: {}
+
+  # -- Providers OpenCode loads (OpenCode `enabled_providers`), by provider id.
+  # When set, every other provider is ignored, including ones OpenCode would
+  # otherwise connect on its own: its free built-in provider, a provider whose
+  # API key environment variable is present, a key saved through the web UI.
+  # Empty = omit, every configured or detected provider loads.
+  # Per-workspace workspaces[].enabledProviders replaces this list.
+  #   enabledProviders: [anthropic]
+  enabledProviders: []
 
   # -- Default model in "provider/model" format (e.g., "deepseek/deepseek-chat").
   # If empty, OpenCode uses its built-in default (anthropic/claude-sonnet-4-6).

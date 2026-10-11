@@ -1,0 +1,38 @@
+# Fixture for the provider filter rendering check. NOT used in any deploy.
+# Exercises enabled_providers and the per-provider model whitelist / blacklist
+# in templates/configmap.yaml:
+#   - global config.enabledProviders: [deepseek, example]
+#   - global provider filter: deepseek blacklists one model
+#   - workspace "studio" REPLACES the global list (enabledProviders: [example])
+#     and REPLACES the example provider's filter (whitelist [model-a])
+#   - workspace "ops" declares neither -> inherits the global list and the
+#     global provider filters unchanged
+image:
+  repository: ghcr.io/neomanexlabs/opencode
+  tag: "1.14.48"
+workspaces:
+  - name: studio
+    repo: git@example.com:org/studio.git
+    branch: main
+    size: 10Gi
+    model: example/model-a
+    smallModel: example/model-a
+    enabledProviders: [example]
+    providerModels:
+      example:
+        whitelist: [model-a]
+  - name: ops
+    repo: git@example.com:org/ops.git
+    branch: main
+    size: 10Gi
+config:
+  enabledProviders: [deepseek, example]
+  providers:
+    deepseek:
+      secretKey: deepseek-api-key
+      blacklist: [deepseek-reasoner]
+    example:
+      secretKey: example-api-key
+      whitelist: [model-a, model-b]
+externalSecrets:
+  enabled: false
