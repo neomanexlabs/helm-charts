@@ -1,0 +1,16 @@
+# Reviewed Trivy exceptions for the OpenCode image (read by the image workflow).
+#
+# Only findings that cannot be fixed in this image belong here: the fix must
+# come from an upstream rebuild. Every entry names the component, the version
+# that fixes it, and the date by which it is re-checked. Remove an entry as
+# soon as an upstream release carries the fix.
+#
+# Decided 2026-10-12. Re-check by 2026-10-26.
+
+# The kubectl binary (v1.36.5) is built with Go 1.26.8. These Go standard
+# library and golang.org/x/net findings are fixed in Go 1.26.9, which no
+# kubectl release ships yet. Re-check: the Go version of the newest kubectl
+# patch release.
+CVE-2026-78667
+CVE-2026-78669
+CVE-2026-97031
