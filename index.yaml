@@ -69,6 +69,50 @@ entries:
   opencode:
   - annotations:
       artifacthub.io/changes: |
+        - kind: added
+          description: config.enabledProviders and workspaces[].enabledProviders render OpenCode enabled_providers, so a workspace loads only the providers you list
+        - kind: added
+          description: Per-provider whitelist and blacklist, globally on config.providers and per workspace through workspaces[].providerModels, limit which models the model picker shows
+        - kind: changed
+          description: The default image moves to OpenCode 1.19.0
+      artifacthub.io/links: |
+        - name: Website
+          url: https://neomanex.com
+        - name: Contact
+          url: https://neomanex.com/contact
+        - name: Product
+          url: https://convops.app
+        - name: Source
+          url: https://github.com/neomanexlabs/helm-charts
+    apiVersion: v2
+    appVersion: 1.19.0
+    created: "2026-10-11T15:53:51.251506634Z"
+    description: Runs the OpenCode coding agent as a long-lived service in your cluster,
+      web UI and HTTP API behind your own ingress, one persistent workspace per git
+      repository, with per-workspace config, MCP servers and git sync.
+    digest: 898fdb628c75b41cbcc9eb88301a43f3bb731b889b42f962f604c794019ad543
+    home: https://neomanex.com
+    keywords:
+    - opencode
+    - ai-coding-agent
+    - kubernetes
+    - helm
+    - statefulset
+    - mcp
+    - ai-agents
+    maintainers:
+    - name: Neomanex
+      url: https://neomanex.com/contact
+    name: opencode
+    sources:
+    - https://github.com/neomanexlabs/helm-charts
+    - https://github.com/anomalyco/opencode
+    type: application
+    urls:
+    - https://github.com/neomanexlabs/helm-charts/releases/download/opencode-1.4.6/opencode-1.4.6.tgz
+    version: 1.4.6
+  - annotations:
+      artifacthub.io/changes: |
         - kind: changed
           description: The chart description and README lead with what the chart is for, running the OpenCode web UI and HTTP API in a cluster so the agent is reachable from any browser
         - kind: added
@@ -369,4 +413,4 @@ entries:
     urls:
     - https://github.com/neomanexlabs/helm-charts/releases/download/redis-1.1.0/redis-1.1.0.tgz
     version: 1.1.0
-generated: "2026-10-06T12:09:51.396421769Z"
+generated: "2026-10-11T15:53:51.251542918Z"
