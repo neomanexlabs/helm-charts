@@ -14,8 +14,8 @@ fullnameOverride: ""
 image:
   # -- Container image repository
   repository: ghcr.io/neomanexlabs/opencode
-  # -- Image tag (pin to a published image tag)
-  tag: "1.19.0"
+  # -- Image tag. `<opencode>-<n>` is an immutable build; `<opencode>` floats to its newest build. See "Image versions" in the README
+  tag: "1.19.0-2"
   # -- Pull policy
   pullPolicy: IfNotPresent
 

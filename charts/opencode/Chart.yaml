@@ -3,7 +3,7 @@ name: opencode
 description: Runs the OpenCode coding agent as a long-lived service in your cluster, web UI and HTTP API behind your own ingress, one persistent workspace per git repository, with per-workspace config, MCP servers and git sync.
 
 type: application
-version: 1.4.8
+version: 1.4.9
 appVersion: "1.19.0"
 
 keywords:
@@ -28,7 +28,9 @@ maintainers:
 annotations:
   artifacthub.io/changes: |
     - kind: changed
-      description: README documents provider and model filtering (enabledProviders, whitelist/blacklist, per-workspace providerModels) and the 1.4.5 to 1.4.8 upgrade. No template changes.
+      description: Default image.tag moves to the immutable 1.19.0-2 build (kubectl 1.36.5, scanned with Trivy before publish).
+    - kind: added
+      description: README documents image versions and tag grammar, digest pinning, per-workspace image tags, release-wide providers and config-driven restarts.
   artifacthub.io/links: |
     - name: Website
       url: https://neomanex.com

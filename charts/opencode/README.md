@@ -8,13 +8,13 @@ It is for platform and infrastructure teams who want coding agents living next t
 
 ```sh
 helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
-helm install opencode neomanexlabs/opencode --version 1.4.8 -f my-values.yaml
+helm install opencode neomanexlabs/opencode --version 1.4.9 -f my-values.yaml
 ```
 
 Or as an OCI artifact:
 
 ```sh
-helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.8 -f my-values.yaml
+helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.9 -f my-values.yaml
 ```
 
 ## Why run it in a cluster
@@ -62,6 +62,21 @@ A secrets mode that reads plain Kubernetes Secrets you create yourself, without 
 
 Each entry in `workspaces` becomes its own StatefulSet, Service, ConfigMap and PersistentVolumeClaim, named after the workspace. An init container clones the workspace repository into the volume on first start and repairs permissions on every restart, then the OpenCode server runs as uid 1000 with that checkout mounted at `/workspace/<name>`. A per-workspace ConfigMap renders `opencode.json`: providers, MCP servers, per-workspace instructions, and a permission map folded from the global and per-workspace `tools` filters. A git-sync CronJob keeps each checkout current and, when `gitSync.autosave` is configured, commits and pushes agent-written paths on a schedule. Optional pieces, all off by default: NetworkPolicy, ingress for the web UI and for the API, RBAC roles that let the agent deploy or expose workloads in its own namespace, a session-cleanup CronJob, and a separate MCP deployment.
 
+## Image versions
+
+The default image is `ghcr.io/neomanexlabs/opencode`: upstream OpenCode plus `git`, `openssh-client`, `bash`, Node.js and kubectl, running as uid 1000. Every published tag is listed on the [package page](https://github.com/neomanexlabs/helm-charts/pkgs/container/opencode).
+
+| Tag | Meaning |
+|-----|---------|
+| `<opencode>-<n>`, e.g. `1.19.0-2` | One build of OpenCode `<opencode>`. Immutable. `<n>` increases when the image is rebuilt on the same OpenCode version (tool bumps, security fixes) |
+| `<opencode>`, e.g. `1.19.0` | Floats to the newest `-<n>` build of that OpenCode version |
+
+There is no `latest` tag. Every image is scanned with Trivy before it is pushed; a CRITICAL or HIGH finding with an available fix blocks the publish.
+
+The chart defaults to an immutable `-<n>` tag. To pin by digest instead, set `image.tag` to `<tag>@sha256:<digest>`; the chart renders `repository:tag`, so the digest is carried through as written. Read the digest with `docker buildx imagetools inspect ghcr.io/neomanexlabs/opencode:<tag>`.
+
+One workspace can run a different version with `workspaces[].image.tag`. Only the tag is per workspace; `image.repository` is shared by every workspace.
+
 ## Limiting providers and models
 
 OpenCode lists every model of every provider it can reach, which runs to several hundred entries once a router provider is connected. Two settings narrow the model picker, globally or per workspace:
@@ -87,11 +102,20 @@ workspaces:
 
 `providerModels` also works for a provider that has no `config.providers` entry: the chart renders a block with the filter only, and OpenCode keeps resolving that provider's key on its own (environment variable or web UI). Provider and model ids are the ones in the [models.dev](https://models.dev) catalog OpenCode reads; check them against the running server's `GET /config/providers` after a change, because providers are occasionally renamed there.
 
+Two things to know before adding a provider for one workspace:
+
+- `config.providers` is release-wide: every entry is rendered into every workspace's `opencode.json`. To keep a new provider away from the other workspaces, give each of them an explicit `enabledProviders` list that leaves it out.
+- Every workspace StatefulSet carries a checksum of the whole rendered ConfigMap set. Any change that alters one workspace's rendered `opencode.json` (anything under `config`, or a workspace's providers, models, MCP servers or instructions) restarts every workspace pod.
+
 ## Label namespace
 
 The chart labels every workspace-scoped object with `opencode.neomanex.com/workspace: <name>`, and that key is part of the StatefulSet selector. Kubernetes makes selectors immutable, so this key will not be renamed inside a major version: changing it would require deleting and recreating every StatefulSet. Treat `opencode.neomanex.com/*` as the chart's reserved label namespace and do not set those keys yourself.
 
 ## Upgrading
+
+### 1.4.8 to 1.4.9
+
+No values changes required. The default `image.tag` moves from the floating `1.19.0` to the immutable `1.19.0-2` (same OpenCode version; kubectl 1.36.5 and a Trivy-scanned build). Overlays that pin `image.tag` keep their version.
 
 ### 1.4.5 to 1.4.8
 
@@ -155,7 +179,7 @@ No values changes. With `externalSecrets.enabled: false` the chart now renders a
 | gitlab.poetrySources | list | `[]` | Poetry private-registry source names this deployment's sessions need auth for. For each entry the chart renders a POETRY_HTTP_BASIC_<UPPER_SNAKE(name)>_USERNAME=__token__ / _PASSWORD (from the `gitlab-token` secret key) env pair, so a runtime `poetry install` can pull that source's private packages. Each name MUST match a pyproject `[[tool.poetry.source]]` name the sessions resolve. Only rendered when externalSecrets.enabled AND gitlab.enabled (same gating as GITLAB_TOKEN). |
 | image.pullPolicy | string | `"IfNotPresent"` | Pull policy |
 | image.repository | string | `"ghcr.io/neomanexlabs/opencode"` | Container image repository |
-| image.tag | string | `"1.19.0"` | Image tag (pin to a published image tag) |
+| image.tag | string | `"1.19.0-2"` | Image tag. `<opencode>-<n>` is an immutable build; `<opencode>` floats to its newest build. See "Image versions" in the README |
 | ingress.annotations | object | `{}` | Additional annotations |
 | ingress.className | string | `"nginx"` | Ingress class name |
 | ingress.enabled | bool | `false` |  |

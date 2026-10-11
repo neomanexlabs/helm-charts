@@ -1,3 +1,15 @@
+## opencode 1.4.9
+
+**What changed**
+
+- Default `image.tag` is `1.19.0-2`, an immutable build of OpenCode 1.19.0 with kubectl 1.36.5. The image workflow now scans every build with Trivy and pushes only after a clean scan.
+- README: new "Image versions" section (tag grammar, package page, digest pinning, per-workspace `image.tag`).
+- README: `config.providers` is release-wide, and a rendered config change restarts every workspace.
+
+**Upgrading**
+
+No action needed. Overlays that pin `image.tag` keep their version; the rest move from the floating `1.19.0` tag to `1.19.0-2`.
+
 ## opencode 1.4.8
 
 **What changed**
