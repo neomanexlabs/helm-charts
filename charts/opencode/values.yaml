@@ -141,7 +141,7 @@ gitlab:
 #                              # `enabled_providers`). Replaces the global
 #                              # config.enabledProviders. Empty = global list.
 #   providerModels: {}         # Per-provider model filter for this workspace,
-#                              # e.g. {kimi-for-coding: {whitelist: [k3]}}.
+#                              # e.g. {anthropic: {whitelist: [claude-sonnet-4-6]}}.
 #                              # An entry replaces that provider's global
 #                              # whitelist / blacklist. See config.providers.
 #                              # A provider with no config.providers entry
