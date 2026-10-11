@@ -5,6 +5,9 @@
 #   - global provider filter: deepseek blacklists one model
 #   - workspace "studio" REPLACES the global list (enabledProviders: [example])
 #     and REPLACES the example provider's filter (whitelist [model-a])
+#   - workspace "studio" also filters "env-only", a provider with NO
+#     config.providers entry (its key comes from the environment or the web
+#     UI): it renders a block with the filter only, no options / apiKey
 #   - workspace "ops" declares neither -> inherits the global list and the
 #     global provider filters unchanged
 image:
@@ -21,6 +24,8 @@ workspaces:
     providerModels:
       example:
         whitelist: [model-a]
+      env-only:
+        whitelist: [model-x]
   - name: ops
     repo: git@example.com:org/ops.git
     branch: main

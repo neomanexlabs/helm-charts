@@ -1,3 +1,17 @@
+## opencode 1.4.7
+
+**What changed**
+
+- `workspaces[].providerModels` now also applies to a provider that has no `config.providers` entry. The chart renders a block for it with the model filter only: no `options`, no `apiKey`.
+
+**Why**
+
+In 1.4.6 the filter rendered only inside `config.providers` entries. A provider whose key OpenCode resolves on its own, from an environment variable or from a key saved through the web UI, could be allowed with `enabledProviders` but not narrowed to a subset of its models. Adding a `config.providers` entry to work around that would replace the key the workspace already uses.
+
+**Upgrading**
+
+No action needed. Values that set no `providerModels` render the same `opencode.json` as 1.4.6.
+
 ## opencode 1.4.6
 
 **What changed**
