@@ -69,6 +69,46 @@ entries:
   opencode:
   - annotations:
       artifacthub.io/changes: |
+        - kind: changed
+          description: README documents provider and model filtering (enabledProviders, whitelist/blacklist, per-workspace providerModels) and the 1.4.5 to 1.4.8 upgrade. No template changes.
+      artifacthub.io/links: |
+        - name: Website
+          url: https://neomanex.com
+        - name: Contact
+          url: https://neomanex.com/contact
+        - name: Product
+          url: https://convops.app
+        - name: Source
+          url: https://github.com/neomanexlabs/helm-charts
+    apiVersion: v2
+    appVersion: 1.19.0
+    created: "2026-10-11T16:02:29.542420436Z"
+    description: Runs the OpenCode coding agent as a long-lived service in your cluster,
+      web UI and HTTP API behind your own ingress, one persistent workspace per git
+      repository, with per-workspace config, MCP servers and git sync.
+    digest: e0ae029fc3885a3ecba30a2590338efee724453f801145645ee16b57edf6c4ec
+    home: https://neomanex.com
+    keywords:
+    - opencode
+    - ai-coding-agent
+    - kubernetes
+    - helm
+    - statefulset
+    - mcp
+    - ai-agents
+    maintainers:
+    - name: Neomanex
+      url: https://neomanex.com/contact
+    name: opencode
+    sources:
+    - https://github.com/neomanexlabs/helm-charts
+    - https://github.com/anomalyco/opencode
+    type: application
+    urls:
+    - https://github.com/neomanexlabs/helm-charts/releases/download/opencode-1.4.8/opencode-1.4.8.tgz
+    version: 1.4.8
+  - annotations:
+      artifacthub.io/changes: |
         - kind: fixed
           description: workspaces[].providerModels now filters a provider that has no config.providers entry, such as one whose key comes from the environment or was saved through the web UI, by rendering a block with the filter only
       artifacthub.io/links: |
@@ -453,4 +493,4 @@ entries:
     urls:
     - https://github.com/neomanexlabs/helm-charts/releases/download/redis-1.1.0/redis-1.1.0.tgz
     version: 1.1.0
-generated: "2026-10-11T15:57:15.462595515Z"
+generated: "2026-10-11T16:02:29.542447386Z"
