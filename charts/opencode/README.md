@@ -8,13 +8,13 @@ It is for platform and infrastructure teams who want coding agents living next t
 
 ```sh
 helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
-helm install opencode neomanexlabs/opencode --version 1.4.6 -f my-values.yaml
+helm install opencode neomanexlabs/opencode --version 1.4.7 -f my-values.yaml
 ```
 
 Or as an OCI artifact:
 
 ```sh
-helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.6 -f my-values.yaml
+helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.7 -f my-values.yaml
 ```
 
 ## Why run it in a cluster

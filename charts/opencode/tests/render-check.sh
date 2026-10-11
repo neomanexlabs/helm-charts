@@ -34,6 +34,7 @@
 #   P. tests/values-providers-fixture.yaml -> enabled_providers and the
 #      per-provider model whitelist / blacklist render from config, a
 #      workspace's enabledProviders / providerModels replace the global ones,
+#      a provider named only in providerModels renders a filter-only block,
 #      and the DEFAULT render carries neither key.
 #   G. identifier check: no private registry, private git host, in-cluster
 #      service address, deployment-specific release name or mailbox anywhere
@@ -240,6 +241,8 @@ assert "blacklist" not in ex, f"studio: no blacklist expected on example, got: {
 ds = cfg["provider"]["deepseek"]
 assert ds.get("blacklist") == ["deepseek-reasoner"] and "whitelist" not in ds, f"studio: deepseek should keep the global filter, got: {ds}"
 assert cfg.get("model") == "example/model-a" and cfg.get("small_model") == "example/model-a", "studio: model pins lost"
+eo = cfg["provider"].get("env-only")
+assert eo == {"whitelist": ["model-x"]}, "studio: filter-only block expected for a provider with no config entry, got: %s" % eo
 ' || fail "studio: provider filter assertion failed (or opencode.json is not valid JSON)"
 
 # 2. workspace "ops": inherits the global list and the global filters.
@@ -251,6 +254,7 @@ cfg = json.loads(sys.stdin.read())
 assert cfg.get("enabled_providers") == ["deepseek", "example"], "ops: global list expected, got: %s" % cfg.get("enabled_providers")
 assert cfg["provider"]["example"].get("whitelist") == ["model-a", "model-b"], "ops: global whitelist expected, got: %s" % cfg["provider"]["example"]
 assert cfg["provider"]["deepseek"].get("blacklist") == ["deepseek-reasoner"], "ops: global blacklist expected"
+assert "env-only" not in cfg["provider"], "ops: a sibling workspace filter-only provider leaked"
 ' || fail "ops: provider filter assertion failed (or opencode.json is not valid JSON)"
 
 echo "PASS: render-check (provider filter: enabled_providers and model whitelist/blacklist, workspace replaces global, omit-when-empty)"

@@ -144,6 +144,9 @@ gitlab:
 #                              # e.g. {kimi-for-coding: {whitelist: [k3]}}.
 #                              # An entry replaces that provider's global
 #                              # whitelist / blacklist. See config.providers.
+#                              # A provider with no config.providers entry
+#                              # (key from the environment or the web UI)
+#                              # gets a block with the filter only.
 #
 # Example:
 #   workspaces:

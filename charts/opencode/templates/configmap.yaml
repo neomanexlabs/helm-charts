@@ -107,9 +107,20 @@ data:
         {{- range $name, $provider := $.Values.config.providers }}
         {{- $providerList = append $providerList $name }}
         {{- end }}
+        {{- /* A provider named only in $ws.providerModels (no config.providers
+               entry) still gets a block carrying just its model filter, so a
+               workspace can narrow a provider whose key OpenCode resolves on
+               its own (an environment variable, or a key saved through the
+               web UI) without the chart taking over that key. */}}
+        {{- range $name, $_ := ($ws.providerModels | default dict) }}
+        {{- if not (has $name $providerList) }}{{ $providerList = append $providerList $name }}{{ end }}
+        {{- end }}
         {{- $lastIdx := sub (len $providerList) 1 }}
         {{- range $i, $name := $providerList }}
-        {{- $provider := index $.Values.config.providers $name }}
+        {{- $fields := list }}
+        {{- $provider := dict }}
+        {{- if hasKey ($.Values.config.providers | default dict) $name }}
+        {{- $provider = index $.Values.config.providers $name }}
         {{- /* options always carries the {file:} apiKey; extra options (e.g.
                baseURL for a custom/OpenAI- or Anthropic-compatible endpoint)
                are merged in from provider.options without mutating values. */}}
@@ -125,12 +136,12 @@ data:
         {{- $secretFile = index $ws.providerSecrets $name }}
         {{- end }}
         {{- $_ := set $opts "apiKey" (printf "{file:/etc/opencode/secrets/%s}" $secretFile) }}
-        {{- $fields := list }}
         {{- /* npm + models are required for providers NOT in OpenCode's built-in
                models.dev catalog (e.g. z.ai). Built-in providers omit both. */}}
         {{- if $provider.npm }}{{ $fields = append $fields (printf "\"npm\": %s" (toJson $provider.npm)) }}{{ end }}
         {{- $fields = append $fields (printf "\"options\": %s" (toJson $opts)) }}
         {{- if $provider.models }}{{ $fields = append $fields (printf "\"models\": %s" (toJson $provider.models)) }}{{ end }}
+        {{- end }}
         {{- /* Model filter (OpenCode provider whitelist / blacklist): limits
                which of the provider's models the model picker lists. A
                per-workspace $ws.providerModels.<name> entry replaces the
