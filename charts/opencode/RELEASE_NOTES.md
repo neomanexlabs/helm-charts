@@ -1,3 +1,20 @@
+## opencode 1.4.6
+
+**What changed**
+
+- `config.enabledProviders` renders OpenCode's `enabled_providers`. When set, OpenCode loads only the listed providers and ignores every other one, including providers it would otherwise connect on its own (its free built-in provider, a provider whose API key environment variable is present, a key saved through the web UI). `workspaces[].enabledProviders` replaces the global list for one workspace.
+- Any entry under `config.providers` accepts `whitelist` or `blacklist`, a list of model ids, which limits the models the model picker shows for that provider. `workspaces[].providerModels.<provider>` replaces that provider's filter for one workspace.
+- The default image is OpenCode 1.19.0 (`ghcr.io/neomanexlabs/opencode:1.19.0`).
+- `tests/render-check.sh` covers both keys: omitted by default, global values inherited, workspace values replacing the global ones.
+
+**Why**
+
+OpenCode lists every model of every provider it can reach, which is several hundred entries once a router provider is configured. A workspace meant for one model needs a way to show only that model.
+
+**Upgrading**
+
+No action needed. Both keys are off by default and existing values render the same `opencode.json` as 1.4.5. Overlays that pin `image.tag` keep their pinned OpenCode version.
+
 ## opencode 1.4.5
 
 **What changed**

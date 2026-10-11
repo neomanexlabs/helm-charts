@@ -31,6 +31,10 @@
 #      container carries a GIT_SSH_COMMAND pointing at a key that does not
 #      exist. With ESO ON (identity fixture) the ssh-key mount, the copy and
 #      GIT_SSH_COMMAND all still render.
+#   P. tests/values-providers-fixture.yaml -> enabled_providers and the
+#      per-provider model whitelist / blacklist render from config, a
+#      workspace's enabledProviders / providerModels replace the global ones,
+#      and the DEFAULT render carries neither key.
 #   G. identifier check: no private registry, private git host, in-cluster
 #      service address, deployment-specific release name or mailbox anywhere
 #      in the chart directory. The label key opencode.neomanex.com/workspace
@@ -45,6 +49,7 @@ CHART_DIR="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 FIXTURE="$CHART_DIR/tests/values-live-edit-fixture.yaml"
 TOOLS_FIXTURE="$CHART_DIR/tests/values-tools-fixture.yaml"
 IDENTITY_FIXTURE="$CHART_DIR/tests/values-identity-fixture.yaml"
+PROVIDERS_FIXTURE="$CHART_DIR/tests/values-providers-fixture.yaml"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -211,6 +216,44 @@ assert perm == {"*": "allow", "playwright*": "deny"}, f"ops: permission should b
 ' || fail "ops: permission should equal catch-all + global map only (or opencode.json is not valid JSON)"
 
 echo "PASS: render-check (tools filter folded into permission: merge, ordering contract, omit-when-empty, valid JSON)"
+
+# --- P. provider filter: enabled_providers + model whitelist / blacklist ------
+# Defaults render neither key: every provider and model stays listed.
+! grep -q '"enabled_providers"' "$TMP/default.yaml" \
+  || fail "defaults: enabled_providers rendered without config.enabledProviders set"
+! grep -q -E '"(whitelist|blacklist)"' "$TMP/default.yaml" \
+  || fail "defaults: a model whitelist/blacklist rendered without one set"
+
+helm template rel "$CHART_DIR" -f "$PROVIDERS_FIXTURE" > "$TMP/providers.yaml" 2>/dev/null
+
+# 1. workspace "studio": its own list and its own example filter replace the
+#    global ones; deepseek keeps the global blacklist.
+STUDIO_JSON="$(extract_configmap_doc "$TMP/providers.yaml" studio | extract_opencode_json)"
+[ -n "$STUDIO_JSON" ] || fail "providers fixture: studio ConfigMap document not found"
+printf '%s' "$STUDIO_JSON" | python3 -c '
+import json, sys
+cfg = json.loads(sys.stdin.read())
+assert cfg.get("enabled_providers") == ["example"], "studio: workspace list should replace the global one, got: %s" % cfg.get("enabled_providers")
+ex = cfg["provider"]["example"]
+assert ex.get("whitelist") == ["model-a"], f"studio: workspace whitelist should replace the global one, got: {ex}"
+assert "blacklist" not in ex, f"studio: no blacklist expected on example, got: {ex}"
+ds = cfg["provider"]["deepseek"]
+assert ds.get("blacklist") == ["deepseek-reasoner"] and "whitelist" not in ds, f"studio: deepseek should keep the global filter, got: {ds}"
+assert cfg.get("model") == "example/model-a" and cfg.get("small_model") == "example/model-a", "studio: model pins lost"
+' || fail "studio: provider filter assertion failed (or opencode.json is not valid JSON)"
+
+# 2. workspace "ops": inherits the global list and the global filters.
+OPS_P_JSON="$(extract_configmap_doc "$TMP/providers.yaml" ops | extract_opencode_json)"
+[ -n "$OPS_P_JSON" ] || fail "providers fixture: ops ConfigMap document not found"
+printf '%s' "$OPS_P_JSON" | python3 -c '
+import json, sys
+cfg = json.loads(sys.stdin.read())
+assert cfg.get("enabled_providers") == ["deepseek", "example"], "ops: global list expected, got: %s" % cfg.get("enabled_providers")
+assert cfg["provider"]["example"].get("whitelist") == ["model-a", "model-b"], "ops: global whitelist expected, got: %s" % cfg["provider"]["example"]
+assert cfg["provider"]["deepseek"].get("blacklist") == ["deepseek-reasoner"], "ops: global blacklist expected"
+' || fail "ops: provider filter assertion failed (or opencode.json is not valid JSON)"
+
+echo "PASS: render-check (provider filter: enabled_providers and model whitelist/blacklist, workspace replaces global, omit-when-empty)"
 
 # --- E. git commit identity comes from values, not from the templates -------
 # The identity must render in BOTH scripts that set it: the git-init

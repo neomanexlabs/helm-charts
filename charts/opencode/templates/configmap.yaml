@@ -92,6 +92,16 @@ data:
       {{- if $ws.instructions }}
       "instructions": {{ toJson $ws.instructions }},
       {{- end }}
+      {{- /* Provider allowlist (OpenCode `enabled_providers`): when set, ONLY
+             these providers load, which also drops providers OpenCode would
+             otherwise connect on its own (its free built-in provider, a
+             provider found through an environment variable, a key stored in
+             the data volume). Per-workspace $ws.enabledProviders replaces the
+             global list. Empty = omit, every provider loads. */}}
+      {{- $enabledProviders := $ws.enabledProviders | default $.Values.config.enabledProviders }}
+      {{- if $enabledProviders }}
+      "enabled_providers": {{ toJson $enabledProviders }},
+      {{- end }}
       "provider": {
         {{- $providerList := list }}
         {{- range $name, $provider := $.Values.config.providers }}
@@ -121,6 +131,18 @@ data:
         {{- if $provider.npm }}{{ $fields = append $fields (printf "\"npm\": %s" (toJson $provider.npm)) }}{{ end }}
         {{- $fields = append $fields (printf "\"options\": %s" (toJson $opts)) }}
         {{- if $provider.models }}{{ $fields = append $fields (printf "\"models\": %s" (toJson $provider.models)) }}{{ end }}
+        {{- /* Model filter (OpenCode provider whitelist / blacklist): limits
+               which of the provider's models the model picker lists. A
+               per-workspace $ws.providerModels.<name> entry replaces the
+               global provider.whitelist / provider.blacklist for that
+               provider. Empty = omit, every model is listed. */}}
+        {{- $filter := dict "whitelist" $provider.whitelist "blacklist" $provider.blacklist }}
+        {{- if and $ws.providerModels (hasKey $ws.providerModels $name) }}
+        {{- $wsFilter := index $ws.providerModels $name }}
+        {{- $filter = dict "whitelist" $wsFilter.whitelist "blacklist" $wsFilter.blacklist }}
+        {{- end }}
+        {{- if $filter.whitelist }}{{ $fields = append $fields (printf "\"whitelist\": %s" (toJson $filter.whitelist)) }}{{ end }}
+        {{- if $filter.blacklist }}{{ $fields = append $fields (printf "\"blacklist\": %s" (toJson $filter.blacklist)) }}{{ end }}
         "{{ $name }}": {
           {{ join ",\n          " $fields }}
         }{{ if lt $i $lastIdx }},{{ end }}
