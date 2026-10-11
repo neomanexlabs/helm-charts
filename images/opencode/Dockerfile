@@ -29,13 +29,14 @@ ARG OPENCODE_VERSION
 # -----------------------------------------------------------------------------
 FROM alpine:3.21 AS kubectl-fetch
 
-# kubectl v1.33.3 from the official Kubernetes release bucket (static Go
+# kubectl v1.36.5 from the official Kubernetes release bucket (static Go
 # binary, musl-compatible; linux/amd64 -- this image is Alpine amd64).
-# Checksum is the sha256 published by Kubernetes alongside the binary,
-# fetched 2026-07-29:
-#   https://dl.k8s.io/release/v1.33.3/bin/linux/amd64/kubectl.sha256
-ARG KUBECTL_VERSION=1.33.3
-ARG KUBECTL_SHA256=2fcf65c64f352742dc253a25a7c95617c2aba79843d1b74e585c69fe4884afb0
+# The 1.36 line sits in the middle of kubectl's supported version skew, so it
+# works against 1.35, 1.36 and 1.37 clusters. Checksum is the sha256 published
+# by Kubernetes alongside the binary, fetched 2026-10-12:
+#   https://dl.k8s.io/release/v1.36.5/bin/linux/amd64/kubectl.sha256
+ARG KUBECTL_VERSION=1.36.5
+ARG KUBECTL_SHA256=33bc88a24c3b09cf55bfd59e6ca977881b61fc3f25ab65bc80c65b430248648e
 
 RUN apk add --no-cache curl
 RUN set -eux; \
