@@ -1,3 +1,15 @@
+## opencode 1.4.8
+
+**What changed**
+
+- README: new "Limiting providers and models" section covering `enabledProviders`, provider `whitelist` / `blacklist` and per-workspace `providerModels`, with an example.
+- README: upgrade note for 1.4.5 to 1.4.8 (default OpenCode image 1.14.48 to 1.19.0, new optional keys).
+- `values.yaml`: the `providerModels` comment example uses a current provider id.
+
+**Upgrading**
+
+No action needed. Documentation only; templates are unchanged and every values file renders the same manifests as 1.4.7.
+
 ## opencode 1.4.7
 
 **What changed**

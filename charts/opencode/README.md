@@ -8,13 +8,13 @@ It is for platform and infrastructure teams who want coding agents living next t
 
 ```sh
 helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
-helm install opencode neomanexlabs/opencode --version 1.4.7 -f my-values.yaml
+helm install opencode neomanexlabs/opencode --version 1.4.8 -f my-values.yaml
 ```
 
 Or as an OCI artifact:
 
 ```sh
-helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.7 -f my-values.yaml
+helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.8 -f my-values.yaml
 ```
 
 ## Why run it in a cluster
@@ -62,11 +62,40 @@ A secrets mode that reads plain Kubernetes Secrets you create yourself, without 
 
 Each entry in `workspaces` becomes its own StatefulSet, Service, ConfigMap and PersistentVolumeClaim, named after the workspace. An init container clones the workspace repository into the volume on first start and repairs permissions on every restart, then the OpenCode server runs as uid 1000 with that checkout mounted at `/workspace/<name>`. A per-workspace ConfigMap renders `opencode.json`: providers, MCP servers, per-workspace instructions, and a permission map folded from the global and per-workspace `tools` filters. A git-sync CronJob keeps each checkout current and, when `gitSync.autosave` is configured, commits and pushes agent-written paths on a schedule. Optional pieces, all off by default: NetworkPolicy, ingress for the web UI and for the API, RBAC roles that let the agent deploy or expose workloads in its own namespace, a session-cleanup CronJob, and a separate MCP deployment.
 
+## Limiting providers and models
+
+OpenCode lists every model of every provider it can reach, which runs to several hundred entries once a router provider is connected. Two settings narrow the model picker, globally or per workspace:
+
+| Setting | Effect | Per-workspace override |
+|---------|--------|------------------------|
+| `config.enabledProviders` | Only these provider ids load. Every other provider is ignored, including ones OpenCode connects on its own (its free built-in provider, an API key environment variable, a key saved through the web UI) | `workspaces[].enabledProviders` replaces the list |
+| `config.providers.<id>.whitelist` / `.blacklist` | Only these model ids (whitelist) or all but these (blacklist) are listed for that provider | `workspaces[].providerModels.<id>` replaces that provider's filter |
+
+A workspace restricted to a single model:
+
+```yaml
+workspaces:
+  - name: app
+    repo: git@github.com:example/app.git
+    model: anthropic/claude-sonnet-4-6
+    smallModel: anthropic/claude-sonnet-4-6
+    enabledProviders: [anthropic]
+    providerModels:
+      anthropic:
+        whitelist: [claude-sonnet-4-6]
+```
+
+`providerModels` also works for a provider that has no `config.providers` entry: the chart renders a block with the filter only, and OpenCode keeps resolving that provider's key on its own (environment variable or web UI). Provider and model ids are the ones in the [models.dev](https://models.dev) catalog OpenCode reads; check them against the running server's `GET /config/providers` after a change, because providers are occasionally renamed there.
+
 ## Label namespace
 
 The chart labels every workspace-scoped object with `opencode.neomanex.com/workspace: <name>`, and that key is part of the StatefulSet selector. Kubernetes makes selectors immutable, so this key will not be renamed inside a major version: changing it would require deleting and recreating every StatefulSet. Treat `opencode.neomanex.com/*` as the chart's reserved label namespace and do not set those keys yourself.
 
 ## Upgrading
+
+### 1.4.5 to 1.4.8
+
+No values changes required. The default `image.tag` moves from OpenCode 1.14.48 to 1.19.0; overlays that pin `image.tag` keep their version. New optional keys: `config.enabledProviders`, `config.providers.<id>.whitelist` / `.blacklist`, `workspaces[].enabledProviders` and `workspaces[].providerModels` (see "Limiting providers and models"). All are off by default and existing values render the same `opencode.json`.
 
 ### 1.4.0 to 1.4.1
 
