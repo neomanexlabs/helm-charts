@@ -479,9 +479,12 @@ rbac:
   # -- Create a namespace-scoped deployer Role (full CRUD in the release namespace)
   deployerRole: false
   # -- Create a namespace-scoped expose Role:
-  # pods get/list/watch/patch + services/ingresses get/list/watch/create/delete.
+  # pods get/list/watch/patch + services/ingresses get/list/watch/create/delete,
+  # read on cert-manager certificates, requests, orders, challenges and events,
+  # and patch on certificates/status (retry a failed issuance).
   # Lets a script inside the pod expose its own live-edit dev server (label its
-  # pod, create the Service + Ingress). Off by default.
+  # pod, create the Service + Ingress) and see or retry its TLS certificate.
+  # Off by default.
   exposeRole: false
   # -- Bind the SA to an existing cluster-wide reader ClusterRole
   clusterReader: false

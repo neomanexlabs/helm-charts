@@ -102,6 +102,10 @@ printf '%s' "$ROLE_DOC" | grep -q '"patch"' \
   || fail "fixture: expose Role missing pods patch verb"
 printf '%s' "$ROLE_DOC" | grep -q '"delete"' \
   || fail "fixture: expose Role missing secrets delete verb (teardown)"
+printf '%s' "$ROLE_DOC" | grep -q 'certificates/status' \
+  || fail "fixture: expose Role missing certificates/status (certificate retry)"
+printf '%s' "$ROLE_DOC" | grep -q 'acme.cert-manager.io' \
+  || fail "fixture: expose Role missing ACME order/challenge read"
 
 # 2. networkPolicy additionalPorts
 grep -q 'port: 3000' "$TMP/live-edit.yaml" \
@@ -114,6 +118,15 @@ printf '%s' "$GITSYNC" | grep -q '/workspace/ops' \
   || fail "fixture: git-sync CronJob lost the ops workspace"
 printf '%s' "$GITSYNC" | grep -q '/workspace/docs-site' \
   && fail "fixture: git-sync CronJob still includes docs-site (gitSync.enabled: false ignored)"
+printf '%s' "$GITSYNC" | grep -q -- '-name ".tmp-\*" \\) -type f -mmin +60' \
+  || fail "fixture: git-sync sweep must cover repack temp packs and spare ones under an hour old"
+
+# 3a. git-init never leaves background housekeeping to be killed on exit,
+#     and sweeps repack debris as well as fetch debris.
+grep -q 'git config --global maintenance.auto false' "$TMP/live-edit.yaml" \
+  || fail "fixture: git-init must disable background maintenance"
+grep -q "\-name '.tmp-\*'" "$TMP/live-edit.yaml" \
+  || fail "fixture: git-init sweep must cover repack temp packs (.tmp-*)"
 
 # 3b. git-init restart path honours the same opt-out: the docs-site
 #     StatefulSet keeps submodules that sit on a branch, while ops (gitSync on)
