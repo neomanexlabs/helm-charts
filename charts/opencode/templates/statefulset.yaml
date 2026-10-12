@@ -73,6 +73,13 @@ spec:
               git config --global user.name {{ $.Values.git.user.name | quote }}
               git config --global user.email {{ $.Values.git.user.email | quote }}
               git config --global --add safe.directory /workspace/{{ $ws.name }}
+              # No background housekeeping from this container. git fetch starts
+              # gc/maintenance detached; this container exits right after the
+              # fetch, which kills that job mid-write and leaves a pack-sized
+              # temp file behind on every pod start. Housekeeping still runs in
+              # the long-lived runtime container on the agent's own git use.
+              git config --global gc.auto 0
+              git config --global maintenance.auto false
               echo "=== Workspace: {{ $ws.name }} ==="
               if [ ! -d "/workspace/{{ $ws.name }}/.git" ]; then
                 echo "PVC empty. Cloning {{ $ws.repo }}..."
@@ -87,19 +94,23 @@ spec:
               else
                 echo "PVC has repo. Pulling latest for {{ $ws.name }}..."
                 cd /workspace/{{ $ws.name }}
-                # Self-heal a fetch that was killed mid-write (spot preemption).
-                # Two kinds of debris survive such a kill and neither is ever
-                # reclaimed by git on its own:
-                #   tmp_pack_*    - partial packfile, one per interrupted fetch
-                #   0-byte object - truncated loose object; makes every future
-                #                   fetch fail, so the debris compounds
+                # Self-heal a fetch or repack that was killed mid-write (spot
+                # preemption, a killed background gc). Two kinds of debris
+                # survive such a kill and neither is ever reclaimed by git on
+                # its own:
+                #   tmp_pack_* / tmp_idx_* - partial pack from a fetch
+                #   .tmp-<pid>-pack-*      - partial pack from a repack
+                #   0-byte object          - truncated loose object; makes every
+                #                            future fetch fail, so debris compounds
                 # Left alone they are fatal in combination: the truncated object
                 # fails the fetch, this container exits non-zero, kubelet retries
-                # it, and each retry leaks another pack-sized tmp_pack_* until the
+                # it, and each retry leaks another pack-sized temp file until the
                 # PVC is full and the repo can no longer be repaired in place.
+                # Submodule object stores (.git/modules/*/objects) are swept too.
+                # Nothing else touches the repository while this container runs.
                 # A 0-byte loose object is always corrupt (a valid one carries a
                 # zlib header), so deleting it is safe - git refetches it.
-                find .git/objects -name 'tmp_pack_*' -type f -delete 2>/dev/null || true
+                find .git -path '*/objects/pack/*' \( -name 'tmp_pack_*' -o -name 'tmp_idx_*' -o -name '.tmp-*' \) -type f -delete 2>/dev/null || true
                 find .git/objects -type f -size 0 -delete 2>/dev/null || true
                 # NOT bare under `set -e`: a corrupt or unreachable repo must
                 # degrade to "start with current state" like the pull below it,

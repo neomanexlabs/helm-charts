@@ -8,13 +8,13 @@ It is for platform and infrastructure teams who want coding agents living next t
 
 ```sh
 helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
-helm install opencode neomanexlabs/opencode --version 1.4.9 -f my-values.yaml
+helm install opencode neomanexlabs/opencode --version 1.4.10 -f my-values.yaml
 ```
 
 Or as an OCI artifact:
 
 ```sh
-helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.9 -f my-values.yaml
+helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.10 -f my-values.yaml
 ```
 
 ## Why run it in a cluster
@@ -113,6 +113,10 @@ The chart labels every workspace-scoped object with `opencode.neomanex.com/works
 
 ## Upgrading
 
+### 1.4.9 to 1.4.10
+
+No values changes. Every workspace pod restarts once (the git-init script changed). The init container no longer leaves git temp packs behind, and `rbac.exposeRole` gains read access to cert-manager objects and events plus `patch` on `certificates/status`.
+
 ### 1.4.8 to 1.4.9
 
 No values changes required. The default `image.tag` moves from the floating `1.19.0` to the immutable `1.19.0-2` (same OpenCode version; kubectl 1.36.5 and a Trivy-scanned build). Overlays that pin `image.tag` keep their version.
@@ -193,7 +197,7 @@ No values changes. With `externalSecrets.enabled: false` the chart now renders a
 | rbac.clusterReader | bool | `false` | Bind the SA to an existing cluster-wide reader ClusterRole |
 | rbac.clusterReaderRoleName | string | `""` | Name of the EXISTING cluster-wide reader ClusterRole to bind to.    No default: the chart fails to render when clusterReader is true and this    is empty, so nobody silently binds to a role that does not exist. |
 | rbac.deployerRole | bool | `false` | Create a namespace-scoped deployer Role (full CRUD in the release namespace) |
-| rbac.exposeRole | bool | `false` | Create a namespace-scoped expose Role: pods get/list/watch/patch + services/ingresses get/list/watch/create/delete. Lets a script inside the pod expose its own live-edit dev server (label its pod, create the Service + Ingress). Off by default. |
+| rbac.exposeRole | bool | `false` | Create a namespace-scoped expose Role: pods get/list/watch/patch + services/ingresses get/list/watch/create/delete, read on cert-manager certificates, requests, orders, challenges and events, and patch on certificates/status (retry a failed issuance). Lets a script inside the pod expose its own live-edit dev server (label its pod, create the Service + Ingress) and see or retry its TLS certificate. Off by default. |
 | replicaCount | int | `1` | Number of StatefulSet replicas (multi-replica requires external routing) |
 | resources.limits.cpu | string | `"2"` |  |
 | resources.limits.memory | string | `"4Gi"` |  |

@@ -122,6 +122,10 @@ The chart labels every workspace-scoped object with `opencode.neomanex.com/works
 
 ## Upgrading
 
+### 1.4.9 to 1.4.10
+
+No values changes. Every workspace pod restarts once (the git-init script changed). The init container no longer leaves git temp packs behind, and `rbac.exposeRole` gains read access to cert-manager objects and events plus `patch` on `certificates/status`.
+
 ### 1.4.8 to 1.4.9
 
 No values changes required. The default `image.tag` moves from the floating `1.19.0` to the immutable `1.19.0-2` (same OpenCode version; kubectl 1.36.5 and a Trivy-scanned build). Overlays that pin `image.tag` keep their version.

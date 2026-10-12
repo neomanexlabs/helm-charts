@@ -63,14 +63,16 @@ spec:
                   POD="{{ $wsFullname }}-0"
                   NS="{{ $.Release.Namespace }}"
                   echo "Syncing workspace: {{ $ws.name }}"
-                  # Sweep debris from a fetch that was killed mid-write (spot
-                  # preemption) before fetching again. Same self-heal as the
+                  # Sweep debris from a fetch or repack that was killed mid-write
+                  # (spot preemption) before fetching again. Same self-heal as the
                   # git-init initContainer -- see statefulset.yaml for why these
-                  # two file kinds are fatal in combination. This job fetches
+                  # file kinds are fatal in combination. This job fetches
                   # every 6h while the pod may stay up for weeks, so without the
                   # sweep here a corrupt repo stays broken (and every sync fails)
-                  # until something happens to restart the pod.
-                  kubectl exec "$POD" -n "$NS" -- sh -c 'cd /workspace/{{ $ws.name }} && find .git/objects -name "tmp_pack_*" -type f -delete 2>/dev/null; find .git/objects -type f -size 0 -delete 2>/dev/null; true'
+                  # until something happens to restart the pod. Temp packs must
+                  # be older than an hour: the agent may be fetching or repacking
+                  # in the pod right now.
+                  kubectl exec "$POD" -n "$NS" -- sh -c 'cd /workspace/{{ $ws.name }} && find .git -path "*/objects/pack/*" \( -name "tmp_pack_*" -o -name "tmp_idx_*" -o -name ".tmp-*" \) -type f -mmin +60 -delete 2>/dev/null; find .git/objects -type f -size 0 -delete 2>/dev/null; true'
                   kubectl exec "$POD" -n "$NS" -- sh -c 'cd /workspace/{{ $ws.name }} && git fetch origin && git pull --ff-only && git submodule sync --recursive && git submodule update --init --recursive --force'
 {{- /*
 Autosave: commit + push dirty paths straight from this CronJob, as a backstop

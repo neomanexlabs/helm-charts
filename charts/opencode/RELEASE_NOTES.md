@@ -1,3 +1,16 @@
+## opencode 1.4.10
+
+**What changed**
+
+- git-init sets `gc.auto 0` and `maintenance.auto false` in its own global git config. `git fetch` starts gc and maintenance in the background; the init container exits right after the fetch, which killed that job mid-write and left a pack-sized temp file on the volume at every pod start. The long-lived runtime container still runs git housekeeping as usual.
+- The git-init sweep now removes `tmp_pack_*`, `tmp_idx_*` and `.tmp-*` (repack) temp packs, in the superproject and in submodule object stores. Previously only `tmp_pack_*` under `.git/objects` was removed, so repack debris accumulated until the volume was full.
+- The git-sync CronJob runs the same sweep, limited to files older than one hour, because the agent may be fetching or repacking in the pod at that moment.
+- `rbac.exposeRole` adds read access to cert-manager `certificates`, `certificaterequests`, `orders`, `challenges` and core `events`, and `patch` on `certificates/status`. A live-edit script can report why a per-session certificate failed and request a new issuance after a transient ACME error instead of waiting out cert-manager's backoff.
+
+**Upgrading**
+
+No values changes. Every workspace pod restarts once because the init container script changed. With `rbac.exposeRole: false` (the default) no RBAC objects change.
+
 ## opencode 1.4.9
 
 **What changed**
