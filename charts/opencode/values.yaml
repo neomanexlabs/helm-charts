@@ -101,6 +101,11 @@ gitlab:
 #   size:   PVC size for workspace volume (default: 10Gi)
 #
 # Optional per-workspace overrides (fall back to top-level values):
+#   enabled: true              # false turns the workspace off: its StatefulSet,
+#                              # Services, Ingresses, ConfigMap and CronJobs are
+#                              # not rendered. The PersistentVolumeClaims stay, so
+#                              # setting it back to true resumes the same
+#                              # checkout and session data.
 #   image:
 #     tag: "1.19.0"            # Override image tag for this workspace
 #   resources: {}              # Override container resources

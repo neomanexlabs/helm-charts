@@ -122,6 +122,10 @@ The chart labels every workspace-scoped object with `opencode.neomanex.com/works
 
 ## Upgrading
 
+### 1.4.10 to 1.4.11
+
+No values changes. New optional `workspaces[].enabled` (default `true`). Setting it to `false` removes that workspace's StatefulSet, Services, Ingresses, ConfigMap and CronJobs on the next upgrade; its PersistentVolumeClaims are kept, so turning it back on resumes the same checkout and sessions. Release-wide objects (secrets, RBAC, MCP deployments) are unchanged. Requires Helm 3.10 or newer.
+
 ### 1.4.9 to 1.4.10
 
 No values changes. Every workspace pod restarts once (the git-init script changed). The init container no longer leaves git temp packs behind, and `rbac.exposeRole` gains read access to cert-manager objects and events plus `patch` on `certificates/status`.

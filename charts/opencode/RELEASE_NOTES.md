@@ -1,3 +1,13 @@
+## opencode 1.4.11
+
+**What changed**
+
+- New per-workspace `enabled` flag (default `true`). With `enabled: false` the workspace's StatefulSet, Services, Ingresses, ConfigMap and CronJobs are not rendered, so an upgrade removes them. The PersistentVolumeClaims come from the StatefulSet's volume claim templates and are not owned by the release, so the checkout and session data survive and come back when the flag returns to `true`.
+
+**Upgrading**
+
+No values changes; with every workspace enabled the rendered manifests are identical to 1.4.10 apart from the chart label. Requires Helm 3.10 or newer.
+
 ## opencode 1.4.10
 
 **What changed**

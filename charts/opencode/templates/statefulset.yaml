@@ -3,6 +3,8 @@ Per-workspace StatefulSet: each workspace entry gets its own StatefulSet
 with isolated PVCs, init container, and config.
 */}}
 {{- range $idx, $ws := .Values.workspaces }}
+{{- /* enabled: false renders nothing for this workspace; its PVCs are kept. */}}
+{{- if eq (toString $ws.enabled) "false" }}{{- continue }}{{- end }}
 {{- $fullname := include "opencode.fullname" $ }}
 {{- $wsFullname := printf "%s-%s" $fullname $ws.name }}
 ---

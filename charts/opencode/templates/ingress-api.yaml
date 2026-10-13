@@ -6,6 +6,8 @@ Carries NO oauth2-proxy annotations. Uses nginx-level HTTP Basic auth
 Each workspace can override apiIngress settings.
 */}}
 {{- range $idx, $ws := .Values.workspaces }}
+{{- /* enabled: false renders nothing for this workspace; its PVCs are kept. */}}
+{{- if eq (toString $ws.enabled) "false" }}{{- continue }}{{- end }}
 {{- $fullname := include "opencode.fullname" $ }}
 {{- $wsFullname := printf "%s-%s" $fullname $ws.name }}
 {{- /* Determine effective apiIngress config: per-workspace override or global fallback */}}

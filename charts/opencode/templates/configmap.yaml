@@ -4,6 +4,8 @@ Provider API keys use {file:PATH} substitution -- secrets are NOT in this Config
 They are volume-mounted from ESO-managed K8s Secrets at /etc/opencode/secrets/.
 */}}
 {{- range $idx, $ws := .Values.workspaces }}
+{{- /* enabled: false renders nothing for this workspace; its PVCs are kept. */}}
+{{- if eq (toString $ws.enabled) "false" }}{{- continue }}{{- end }}
 {{- $fullname := include "opencode.fullname" $ }}
 {{- $wsFullname := printf "%s-%s" $fullname $ws.name }}
 ---

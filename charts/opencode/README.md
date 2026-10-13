@@ -8,13 +8,13 @@ It is for platform and infrastructure teams who want coding agents living next t
 
 ```sh
 helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
-helm install opencode neomanexlabs/opencode --version 1.4.10 -f my-values.yaml
+helm install opencode neomanexlabs/opencode --version 1.4.11 -f my-values.yaml
 ```
 
 Or as an OCI artifact:
 
 ```sh
-helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.10 -f my-values.yaml
+helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.11 -f my-values.yaml
 ```
 
 ## Why run it in a cluster
@@ -112,6 +112,10 @@ Two things to know before adding a provider for one workspace:
 The chart labels every workspace-scoped object with `opencode.neomanex.com/workspace: <name>`, and that key is part of the StatefulSet selector. Kubernetes makes selectors immutable, so this key will not be renamed inside a major version: changing it would require deleting and recreating every StatefulSet. Treat `opencode.neomanex.com/*` as the chart's reserved label namespace and do not set those keys yourself.
 
 ## Upgrading
+
+### 1.4.10 to 1.4.11
+
+No values changes. New optional `workspaces[].enabled` (default `true`). Setting it to `false` removes that workspace's StatefulSet, Services, Ingresses, ConfigMap and CronJobs on the next upgrade; its PersistentVolumeClaims are kept, so turning it back on resumes the same checkout and sessions. Release-wide objects (secrets, RBAC, MCP deployments) are unchanged. Requires Helm 3.10 or newer.
 
 ### 1.4.9 to 1.4.10
 
