@@ -3,6 +3,8 @@ Per-workspace headless service for pod-level DNS addressing.
 Enables direct pod access: <release>-<workspace>-0.<release>-<workspace>-hl.<namespace>.svc.cluster.local
 */}}
 {{- range $idx, $ws := .Values.workspaces }}
+{{- /* enabled: false renders nothing for this workspace; its PVCs are kept. */}}
+{{- if eq (toString $ws.enabled) "false" }}{{- continue }}{{- end }}
 {{- $fullname := include "opencode.fullname" $ }}
 {{- $wsFullname := printf "%s-%s" $fullname $ws.name }}
 ---

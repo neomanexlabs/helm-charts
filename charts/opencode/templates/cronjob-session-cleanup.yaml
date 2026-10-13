@@ -5,6 +5,8 @@ RWO PVCs cannot be shared between StatefulSet and CronJob pods simultaneously.
 */}}
 {{- if .Values.cronJobs.sessionCleanup.enabled }}
 {{- range $idx, $ws := .Values.workspaces }}
+{{- /* enabled: false renders nothing for this workspace; its PVCs are kept. */}}
+{{- if eq (toString $ws.enabled) "false" }}{{- continue }}{{- end }}
 {{- $fullname := include "opencode.fullname" $ }}
 {{- $wsFullname := printf "%s-%s" $fullname $ws.name }}
 ---

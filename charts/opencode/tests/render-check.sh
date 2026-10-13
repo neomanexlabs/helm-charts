@@ -272,6 +272,29 @@ assert "env-only" not in cfg["provider"], "ops: a sibling workspace filter-only 
 
 echo "PASS: render-check (provider filter: enabled_providers and model whitelist/blacklist, workspace replaces global, omit-when-empty)"
 
+# --- W. workspaces[].enabled: false renders nothing for that workspace ------
+helm template rel "$CHART_DIR" \
+  --set 'workspaces[0].name=keep' --set 'workspaces[0].repo=https://example.com/keep.git' \
+  --set 'workspaces[1].name=off' --set 'workspaces[1].repo=https://example.com/off.git' \
+  --set 'workspaces[1].enabled=false' \
+  --set 'workspaces[1].ingress.host=off.example.com' --set 'workspaces[1].apiIngress.host=off-api.example.com' \
+  > "$TMP/enabled.yaml" || fail "enabled: render with a disabled workspace failed"
+grep -q 'opencode.neomanex.com/workspace: keep' "$TMP/enabled.yaml" \
+  || fail "enabled: the enabled workspace did not render"
+if grep -E -q 'opencode.neomanex.com/workspace: "?off"?$|name: rel-opencode-off' "$TMP/enabled.yaml"; then
+  fail "enabled: an object for the disabled workspace still renders"
+fi
+helm template rel "$CHART_DIR" \
+  --set 'workspaces[0].name=keep' --set 'workspaces[0].repo=https://example.com/keep.git' \
+  --set 'workspaces[0].enabled=true' > "$TMP/enabled-true.yaml"
+helm template rel "$CHART_DIR" \
+  --set 'workspaces[0].name=keep' --set 'workspaces[0].repo=https://example.com/keep.git' \
+  > "$TMP/enabled-unset.yaml"
+cmp -s "$TMP/enabled-true.yaml" "$TMP/enabled-unset.yaml" \
+  || fail "enabled: enabled: true must render the same as leaving it unset"
+
+echo "PASS: render-check (disabled workspace renders nothing, enabled: true is the default)"
+
 # --- E. git commit identity comes from values, not from the templates -------
 # The identity must render in BOTH scripts that set it: the git-init
 # initContainer (runs as root, seeds /root/.gitconfig) and the runtime

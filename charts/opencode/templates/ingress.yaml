@@ -4,6 +4,8 @@ Each workspace can override ingress settings. If a workspace has no ingress.host
 it inherits from the top-level .Values.ingress (backward compat for single-workspace).
 */}}
 {{- range $idx, $ws := .Values.workspaces }}
+{{- /* enabled: false renders nothing for this workspace; its PVCs are kept. */}}
+{{- if eq (toString $ws.enabled) "false" }}{{- continue }}{{- end }}
 {{- $fullname := include "opencode.fullname" $ }}
 {{- $wsFullname := printf "%s-%s" $fullname $ws.name }}
 {{- /* Determine effective ingress config: per-workspace override or global fallback */}}

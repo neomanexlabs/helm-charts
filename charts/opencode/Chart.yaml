@@ -3,7 +3,7 @@ name: opencode
 description: Runs the OpenCode coding agent as a long-lived service in your cluster, web UI and HTTP API behind your own ingress, one persistent workspace per git repository, with per-workspace config, MCP servers and git sync.
 
 type: application
-version: 1.4.10
+version: 1.4.11
 appVersion: "1.19.0"
 
 keywords:
@@ -27,12 +27,8 @@ maintainers:
 
 annotations:
   artifacthub.io/changes: |
-    - kind: fixed
-      description: git-init no longer leaks a pack-sized temp file on every pod start. It disables background gc and maintenance (which were killed when the container exited) and sweeps repack temp packs as well as fetch ones, in submodule object stores too.
-    - kind: fixed
-      description: The git-sync sweep also removes repack temp packs, sparing files under an hour old that a running fetch or repack may still be writing.
     - kind: added
-      description: rbac.exposeRole grants read on cert-manager certificates, requests, orders, challenges and events, and patch on certificates/status, so a live-edit script can see why a certificate failed and retry it.
+      description: workspaces[].enabled turns a single workspace off without deleting its data. A disabled workspace renders no StatefulSet, Services, Ingresses, ConfigMap or CronJobs, and its PersistentVolumeClaims are kept for when it is turned back on.
   artifacthub.io/links: |
     - name: Website
       url: https://neomanex.com

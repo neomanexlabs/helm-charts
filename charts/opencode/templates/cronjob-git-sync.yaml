@@ -8,6 +8,8 @@ SSH key is already mounted inside the StatefulSet pod.
 */}}
 {{- if .Values.cronJobs.gitSync.enabled }}
 {{- range $idx, $ws := .Values.workspaces }}
+{{- /* enabled: false renders nothing for this workspace; its PVCs are kept. */}}
+{{- if eq (toString $ws.enabled) "false" }}{{- continue }}{{- end }}
 {{/*
 Per-workspace opt-out: gitSync.enabled: false skips this workspace entirely
 (no CronJob rendered), e.g. a live-edit workspace whose checkout must never
