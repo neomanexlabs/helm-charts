@@ -152,6 +152,9 @@ gitlab:
 #                              # A provider with no config.providers entry
 #                              # (key from the environment or the web UI)
 #                              # gets a block with the filter only.
+#   nodeSelector: {}           # Replaces the release-level nodeSelector for
+#   tolerations: []            # this workspace's pod (each key whole, no merge).
+#   affinity: {}               # Empty = use the release-level value.
 #
 # Example:
 #   workspaces:
@@ -508,6 +511,20 @@ resources:
   limits:
     cpu: "2"
     memory: 4Gi
+
+# =============================================================================
+# SCHEDULING
+# =============================================================================
+# Applies to every workspace StatefulSet pod. A workspace's own nodeSelector,
+# tolerations or affinity replaces the matching value here as a whole (no merge),
+# the same way workspaces[].resources replaces resources. MCP Deployments and
+# CronJobs are not affected.
+# -- Node labels the workspace pods must match, e.g. {node_pool: workspaces}
+nodeSelector: {}
+# -- Tolerations for the workspace pods, e.g. for a tainted dedicated node pool
+tolerations: []
+# -- Affinity rules for the workspace pods
+affinity: {}
 
 # =============================================================================
 # SECURITY CONTEXT

@@ -33,6 +33,20 @@ spec:
       serviceAccountName: {{ include "opencode.serviceAccountName" $ }}
       securityContext:
         {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      {{- /* Scheduling: a workspace value replaces the release value whole,
+             like resources. Empty everywhere renders nothing. */}}
+      {{- with ($ws.nodeSelector | default $.Values.nodeSelector) }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with ($ws.tolerations | default $.Values.tolerations) }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with ($ws.affinity | default $.Values.affinity) }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       # ================================================================
       # INIT CONTAINER: git clone + submodule init for THIS workspace
       # Idempotent: skips clone if .git/ already exists (PVC persists)

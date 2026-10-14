@@ -1,3 +1,13 @@
+## opencode 1.4.12
+
+**What changed**
+
+- New `nodeSelector`, `tolerations` and `affinity` values for the workspace StatefulSet pods, release-wide and per workspace (`workspaces[].nodeSelector`, `.tolerations`, `.affinity`). A workspace value replaces the release value for that key as a whole, the same way `workspaces[].resources` replaces `resources`. Use it to place a memory-heavy workspace on a dedicated, tainted node pool. MCP Deployments and CronJobs are not affected.
+
+**Upgrading**
+
+No values changes. With the three values left empty the rendered manifests are identical to 1.4.11 apart from the chart label and the `checksum/config` annotation that hashes it, so every workspace pod restarts once on upgrade, as with any chart version change.
+
 ## opencode 1.4.11
 
 **What changed**
