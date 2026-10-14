@@ -8,13 +8,13 @@ It is for platform and infrastructure teams who want coding agents living next t
 
 ```sh
 helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
-helm install opencode neomanexlabs/opencode --version 1.4.11 -f my-values.yaml
+helm install opencode neomanexlabs/opencode --version 1.4.12 -f my-values.yaml
 ```
 
 Or as an OCI artifact:
 
 ```sh
-helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.11 -f my-values.yaml
+helm install opencode oci://ghcr.io/neomanexlabs/charts/opencode --version 1.4.12 -f my-values.yaml
 ```
 
 ## Why run it in a cluster
@@ -146,6 +146,7 @@ No values changes. With `externalSecrets.enabled: false` the chart now renders a
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| affinity | object | `{}` | Affinity rules for the workspace pods |
 | apiIngress.annotations | object | `{}` | Additional annotations (merged after auto-injected cert-manager + basic-auth) |
 | apiIngress.basicAuth | object | `{"enabled":false,"realm":"OpenCode API","secretKey":"server-password","secretName":"","username":"opencode"}` | nginx-level HTTP Basic auth for this host. |
 | apiIngress.basicAuth.enabled | bool | `false` | Enable nginx basic-auth annotations on the api ingress. |
@@ -197,6 +198,7 @@ No values changes. With `externalSecrets.enabled: false` the chart now renders a
 | networkPolicy.additionalPorts | list | `[]` | Extra ingress ports allowed in addition to server.port (e.g. [3000] for a live-edit dev server running inside the pod). |
 | networkPolicy.allowedNamespaces | list | `[]` | Namespaces allowed to reach OpenCode pods Example: [my-app, my-app-sessions] |
 | networkPolicy.enabled | bool | `false` | Enable NetworkPolicy restricting ingress |
+| nodeSelector | object | `{}` | Node labels the workspace pods must match, e.g. {node_pool: workspaces} |
 | podSecurityContext | object | `{"fsGroup":1000,"runAsGroup":1000,"runAsUser":1000,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level security context |
 | rbac.clusterReader | bool | `false` | Bind the SA to an existing cluster-wide reader ClusterRole |
 | rbac.clusterReaderRoleName | string | `""` | Name of the EXISTING cluster-wide reader ClusterRole to bind to.    No default: the chart fails to render when clusterReader is true and this    is empty, so nobody silently binds to a role that does not exist. |
@@ -215,6 +217,7 @@ No values changes. With `externalSecrets.enabled: false` the chart now renders a
 | serviceAccount.annotations | object | `{}` | Annotations (e.g., for GCP Workload Identity) |
 | serviceAccount.create | bool | `true` | Create a ServiceAccount (needed for CronJob kubectl exec) |
 | serviceAccount.name | string | `""` | ServiceAccount name override |
+| tolerations | list | `[]` | Tolerations for the workspace pods, e.g. for a tainted dedicated node pool |
 | workspaces | list | `[]` |  |
 
 ## Support

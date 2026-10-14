@@ -36,6 +36,9 @@
 #      workspace's enabledProviders / providerModels replace the global ones,
 #      a provider named only in providerModels renders a filter-only block,
 #      and the DEFAULT render carries neither key.
+#   S. tests/values-scheduling-fixture.yaml -> nodeSelector, tolerations and
+#      affinity render on the workspace pod from the release values; a
+#      workspace value replaces the release value per key; defaults render none.
 #   G. identifier check: no private registry, private git host, in-cluster
 #      service address, deployment-specific release name or mailbox anywhere
 #      in the chart directory. The label key opencode.neomanex.com/workspace
@@ -51,6 +54,7 @@ FIXTURE="$CHART_DIR/tests/values-live-edit-fixture.yaml"
 TOOLS_FIXTURE="$CHART_DIR/tests/values-tools-fixture.yaml"
 IDENTITY_FIXTURE="$CHART_DIR/tests/values-identity-fixture.yaml"
 PROVIDERS_FIXTURE="$CHART_DIR/tests/values-providers-fixture.yaml"
+SCHED_FIXTURE="$CHART_DIR/tests/values-scheduling-fixture.yaml"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -395,6 +399,40 @@ ESO_STS="$(extract_sts_doc "$TMP/minimal-eso.yaml" demo)"
   || fail "minimal (ESO on): GIT_SSH_COMMAND must render in both containers"
 
 echo "PASS: render-check (minimal example installable without ESO; SSH path intact with ESO)"
+
+# --- S. scheduling: nodeSelector / tolerations / affinity ---------------------
+# Defaults render none of the three keys in the workspace pod spec.
+helm template rel "$CHART_DIR" \
+  --set 'workspaces[0].name=plain' --set 'workspaces[0].repo=https://example.com/plain.git' \
+  > "$TMP/sched-default.yaml" || fail "scheduling: default render failed"
+PLAIN_STS="$(extract_sts_doc "$TMP/sched-default.yaml" plain)"
+[ -n "$PLAIN_STS" ] || fail "scheduling: plain StatefulSet not found"
+! printf '%s\n' "$PLAIN_STS" | grep -q -E '^ +(nodeSelector|tolerations|affinity):' \
+  || fail "scheduling: defaults rendered a nodeSelector, tolerations or affinity key"
+
+helm template rel "$CHART_DIR" -f "$SCHED_FIXTURE" > "$TMP/sched.yaml" \
+  || fail "scheduling: fixture render failed"
+# 1. "inherit" carries all three release-level values.
+INHERIT_STS="$(extract_sts_doc "$TMP/sched.yaml" inherit)"
+[ -n "$INHERIT_STS" ] || fail "scheduling: inherit StatefulSet not found"
+for want in 'node_pool: shared' 'value: shared' 'example.com/tier'; do
+  printf '%s\n' "$INHERIT_STS" | grep -q -F "$want" \
+    || fail "scheduling: inherit should carry the release value '$want'"
+done
+# 2. "dedicated" replaces nodeSelector and tolerations whole, and keeps the
+#    release affinity because it sets none of its own.
+DEDICATED_STS="$(extract_sts_doc "$TMP/sched.yaml" dedicated)"
+[ -n "$DEDICATED_STS" ] || fail "scheduling: dedicated StatefulSet not found"
+for want in 'node_pool: dedicated' 'value: dedicated' 'example.com/tier'; do
+  printf '%s\n' "$DEDICATED_STS" | grep -q -F "$want" \
+    || fail "scheduling: dedicated should carry '$want'"
+done
+for unwanted in 'node_pool: shared' 'value: shared'; do
+  ! printf '%s\n' "$DEDICATED_STS" | grep -q -F "$unwanted" \
+    || fail "scheduling: dedicated should replace, not merge, and still carries '$unwanted'"
+done
+
+echo "PASS: render-check (scheduling: omit-when-empty, release default, workspace replaces per key)"
 
 # --- G. identifier check: nothing deployment-specific in the published chart --
 # The pattern is generic by design (registry hosts, private git hosts,

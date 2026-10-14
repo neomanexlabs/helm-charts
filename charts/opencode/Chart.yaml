@@ -3,7 +3,7 @@ name: opencode
 description: Runs the OpenCode coding agent as a long-lived service in your cluster, web UI and HTTP API behind your own ingress, one persistent workspace per git repository, with per-workspace config, MCP servers and git sync.
 
 type: application
-version: 1.4.11
+version: 1.4.12
 appVersion: "1.19.0"
 
 keywords:
@@ -28,7 +28,7 @@ maintainers:
 annotations:
   artifacthub.io/changes: |
     - kind: added
-      description: workspaces[].enabled turns a single workspace off without deleting its data. A disabled workspace renders no StatefulSet, Services, Ingresses, ConfigMap or CronJobs, and its PersistentVolumeClaims are kept for when it is turned back on.
+      description: nodeSelector, tolerations and affinity for the workspace pods, release-wide and per workspace. A workspace value replaces the release value for that key. Empty by default, so nothing changes unless set.
   artifacthub.io/links: |
     - name: Website
       url: https://neomanex.com

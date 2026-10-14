@@ -1,0 +1,31 @@
+# Fixture for render-check section S: release-level scheduling values, one
+# workspace that inherits them and one that replaces them with its own.
+nodeSelector:
+  node_pool: shared
+tolerations:
+  - key: workload
+    operator: Equal
+    value: shared
+    effect: NoSchedule
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 1
+        preference:
+          matchExpressions:
+            - key: example.com/tier
+              operator: In
+              values: [standard]
+
+workspaces:
+  - name: inherit
+    repo: https://example.com/inherit.git
+  - name: dedicated
+    repo: https://example.com/dedicated.git
+    nodeSelector:
+      node_pool: dedicated
+    tolerations:
+      - key: workload
+        operator: Equal
+        value: dedicated
+        effect: NoSchedule
