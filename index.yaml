@@ -70,6 +70,46 @@ entries:
   - annotations:
       artifacthub.io/changes: |
         - kind: added
+          description: nodeSelector, tolerations and affinity for the workspace pods, release-wide and per workspace. A workspace value replaces the release value for that key. Empty by default, so nothing changes unless set.
+      artifacthub.io/links: |
+        - name: Website
+          url: https://neomanex.com
+        - name: Contact
+          url: https://neomanex.com/contact
+        - name: Product
+          url: https://convops.app
+        - name: Source
+          url: https://github.com/neomanexlabs/helm-charts
+    apiVersion: v2
+    appVersion: 1.19.0
+    created: "2026-10-14T07:44:38.871447481Z"
+    description: Runs the OpenCode coding agent as a long-lived service in your cluster,
+      web UI and HTTP API behind your own ingress, one persistent workspace per git
+      repository, with per-workspace config, MCP servers and git sync.
+    digest: 6dbae2b34963669c4d7b67afcd0dfea3eb670b4fc255dbf8017261577fae0564
+    home: https://neomanex.com
+    keywords:
+    - opencode
+    - ai-coding-agent
+    - kubernetes
+    - helm
+    - statefulset
+    - mcp
+    - ai-agents
+    maintainers:
+    - name: Neomanex
+      url: https://neomanex.com/contact
+    name: opencode
+    sources:
+    - https://github.com/neomanexlabs/helm-charts
+    - https://github.com/anomalyco/opencode
+    type: application
+    urls:
+    - https://github.com/neomanexlabs/helm-charts/releases/download/opencode-1.4.12/opencode-1.4.12.tgz
+    version: 1.4.12
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: added
           description: workspaces[].enabled turns a single workspace off without deleting its data. A disabled workspace renders no StatefulSet, Services, Ingresses, ConfigMap or CronJobs, and its PersistentVolumeClaims are kept for when it is turned back on.
       artifacthub.io/links: |
         - name: Website
@@ -619,4 +659,4 @@ entries:
     urls:
     - https://github.com/neomanexlabs/helm-charts/releases/download/redis-1.1.0/redis-1.1.0.tgz
     version: 1.1.0
-generated: "2026-10-13T14:15:25.163709369Z"
+generated: "2026-10-14T07:44:38.871512337Z"
