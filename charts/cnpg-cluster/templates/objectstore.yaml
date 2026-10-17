@@ -1,0 +1,35 @@
+{{/*
+================================================================================
+Barman Cloud Plugin ObjectStore
+================================================================================
+Rendered when backup.method is plugin. The Cluster points at it through
+spec.plugins (barmanObjectName). Requires the Barman Cloud Plugin installed in
+the operator's namespace.
+
+Retention lives here, not on the Cluster. The object store serverName stays
+empty: set backup.plugin.serverName to write under another name.
+*/}}
+{{- if and .Values.backup.enabled (eq (include "cnpg-cluster.backupMethod" .) "plugin") }}
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: {{ include "cnpg-cluster.objectStoreName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cnpg-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+  {{- with (include "cnpg-cluster.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.backup.retentionPolicy }}
+  retentionPolicy: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.backup.plugin.instanceSidecarConfiguration }}
+  instanceSidecarConfiguration:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  configuration:
+    {{- include "cnpg-cluster.barmanConfiguration" . | trim | nindent 4 }}
+{{- end }}

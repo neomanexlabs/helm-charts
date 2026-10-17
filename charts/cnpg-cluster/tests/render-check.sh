@@ -31,6 +31,11 @@
 #   I. published-content checks: no private registry, private git host or
 #      company mailbox anywhere in the chart directory, no em dash, and no
 #      comment pointing at an external documentation tree.
+#   K. Barman Cloud Plugin: backup.method=plugin renders an ObjectStore that
+#      carries the destination and retention, a Cluster with the plugin as WAL
+#      archiver and no barmanObjectStore, and a plugin ScheduledBackup. The ha
+#      example (built-in method) renders no ObjectStore, and an unknown method
+#      fails the render.
 #   J. chart label: helm.sh/chart is name-version with semver build metadata
 #      stripped, so a +sha suffix never rolls the pooler pods.
 #
@@ -207,6 +212,35 @@ render_fails "eso without provider" "externalSecrets.provider is required" \
   --set externalSecrets.enabled=true
 
 echo "PASS: render-check H (External Secrets, provider required)"
+
+# --- K. Barman Cloud Plugin ------------------------------------------------------
+render "$TMP/plugin.yaml" -f "$HA_EXAMPLE" --set backup.method=plugin \
+  --set backup.plugin.instanceSidecarConfiguration.resources.requests.memory=64Mi
+for kind in Cluster ObjectStore ScheduledBackup; do
+  [ "$(count_kind "$TMP/plugin.yaml" "$kind")" = 1 ] || fail "plugin: expected one $kind"
+done
+STORE="$TMP/plugin-store.yaml"
+extract_doc "$TMP/plugin.yaml" ObjectStore "configuration:" > "$STORE"
+has "$STORE" "destinationPath: gs://my-postgres-backups/rel-cnpg-cluster" "plugin (object store)"
+has "$STORE" "gkeEnvironment: true" "plugin (object store)"
+has "$STORE" 'retentionPolicy: "14d"' "plugin (object store)"
+has "$STORE" "memory: 64Mi" "plugin (sidecar configuration)"
+PCLUSTER="$TMP/plugin-cluster.yaml"
+extract_doc "$TMP/plugin.yaml" Cluster "plugins:" > "$PCLUSTER"
+has "$PCLUSTER" "name: barman-cloud.cloudnative-pg.io" "plugin (cluster)"
+has "$PCLUSTER" "isWALArchiver: true" "plugin (cluster)"
+has "$PCLUSTER" "barmanObjectName: rel-cnpg-cluster" "plugin (cluster)"
+lacks "$TMP/plugin.yaml" "barmanObjectStore:" "plugin"
+SCHED="$TMP/plugin-sched.yaml"
+extract_doc "$TMP/plugin.yaml" ScheduledBackup "schedule:" > "$SCHED"
+has "$SCHED" "method: plugin" "plugin (scheduled backup)"
+has "$SCHED" "pluginConfiguration:" "plugin (scheduled backup)"
+[ "$(count_kind "$TMP/ha.yaml" ObjectStore)" = 0 ] || fail "ha example: built-in method rendered an ObjectStore"
+render_fails "unknown backup method" "backup.method must be barmanObjectStore or plugin" \
+  --set backup.enabled=true --set backup.provider=gcs --set backup.gcs.bucket=example \
+  --set backup.method=other
+
+echo "PASS: render-check K (Barman Cloud Plugin object store, cluster and schedule)"
 
 # --- I. published-content checks ------------------------------------------------
 # The pattern is generic by design (registry hosts, private git hosts,

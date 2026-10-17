@@ -298,86 +298,25 @@ spec:
   # BACKUP CONFIGURATION
   # ---------------------------------------------------------------------------
   {{- if .Values.backup.enabled }}
+  {{- if eq (include "cnpg-cluster.backupMethod" .) "plugin" }}
+  # Barman Cloud Plugin: the object store lives in the ObjectStore resource
+  # (templates/objectstore.yaml), retention included.
+  plugins:
+    - name: {{ .Values.backup.plugin.name }}
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: {{ include "cnpg-cluster.objectStoreName" . }}
+        {{- with .Values.backup.plugin.serverName }}
+        serverName: {{ . }}
+        {{- end }}
+  {{- with .Values.backup.target }}
   backup:
-    {{- if eq .Values.backup.provider "gcs" }}
+    target: {{ . }}
+  {{- end }}
+  {{- else }}
+  backup:
     barmanObjectStore:
-      destinationPath: {{ include "cnpg-cluster.backupDestinationPath" . }}
-      googleCredentials:
-        {{- if .Values.backup.gcs.gkeEnvironment }}
-        gkeEnvironment: true
-        {{- else }}
-        applicationCredentials:
-          name: {{ include "cnpg-cluster.backupSecretName" . }}
-          key: {{ .Values.backup.gcs.credentials.key | default "gcp-credentials.json" }}
-        {{- end }}
-      wal:
-        compression: {{ .Values.backup.wal.compression | default "gzip" }}
-        {{- with .Values.backup.wal.maxParallel }}
-        maxParallel: {{ . }}
-        {{- end }}
-        {{- with .Values.backup.wal.encryption }}
-        encryption: {{ . }}
-        {{- end }}
-      data:
-        compression: {{ .Values.backup.data.compression | default "gzip" }}
-        {{- with .Values.backup.data.encryption }}
-        encryption: {{ . }}
-        {{- end }}
-        {{- with .Values.backup.data.jobs }}
-        jobs: {{ . }}
-        {{- end }}
-
-    {{- else if eq .Values.backup.provider "s3" }}
-    barmanObjectStore:
-      destinationPath: {{ include "cnpg-cluster.backupDestinationPath" . }}
-      {{- with .Values.backup.s3.endpoint }}
-      endpointURL: {{ . }}
-      {{- end }}
-      s3Credentials:
-        accessKeyId:
-          name: {{ include "cnpg-cluster.backupSecretName" . }}
-          key: ACCESS_KEY_ID
-        secretAccessKey:
-          name: {{ include "cnpg-cluster.backupSecretName" . }}
-          key: ACCESS_SECRET_KEY
-        {{- with .Values.backup.s3.region }}
-        region:
-          name: {{ include "cnpg-cluster.backupSecretName" $ }}
-          key: AWS_REGION
-        {{- end }}
-      wal:
-        compression: {{ .Values.backup.wal.compression | default "gzip" }}
-        {{- with .Values.backup.wal.maxParallel }}
-        maxParallel: {{ . }}
-        {{- end }}
-      data:
-        compression: {{ .Values.backup.data.compression | default "gzip" }}
-        {{- with .Values.backup.data.jobs }}
-        jobs: {{ . }}
-        {{- end }}
-
-    {{- else if eq .Values.backup.provider "azure" }}
-    barmanObjectStore:
-      destinationPath: {{ include "cnpg-cluster.backupDestinationPath" . }}
-      azureCredentials:
-        {{- if .Values.backup.azure.inheritFromAzureAD }}
-        inheritFromAzureAD: true
-        {{- else }}
-        connectionString:
-          name: {{ include "cnpg-cluster.backupSecretName" . }}
-          key: AZURE_CONNECTION_STRING
-        {{- end }}
-      wal:
-        compression: {{ .Values.backup.wal.compression | default "gzip" }}
-        {{- with .Values.backup.wal.maxParallel }}
-        maxParallel: {{ . }}
-        {{- end }}
-      data:
-        compression: {{ .Values.backup.data.compression | default "gzip" }}
-        {{- with .Values.backup.data.jobs }}
-        jobs: {{ . }}
-        {{- end }}
-    {{- end }}
+      {{- include "cnpg-cluster.barmanConfiguration" . | trim | nindent 6 }}
 
     {{- with .Values.backup.retentionPolicy }}
     retentionPolicy: {{ . | quote }}
@@ -386,6 +325,7 @@ spec:
     {{- with .Values.backup.target }}
     target: {{ . }}
     {{- end }}
+  {{- end }}
   {{- end }}
 
   # ---------------------------------------------------------------------------

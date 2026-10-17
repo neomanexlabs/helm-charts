@@ -3,7 +3,7 @@
 Runs a [CloudNativePG](https://cloudnative-pg.io) PostgreSQL cluster on Kubernetes from one values file: the `Cluster`, optional PgBouncer poolers, scheduled backups to GCS, S3 or Azure, PodMonitors, NetworkPolicies and External Secrets Operator integration. Its defaults are tuned for clusters that run on spot or preemptible nodes, where a node can disappear at any minute: immediate failover, PVC reuse, soft anti-affinity, and an optional recovery job that rebuilds replicas a reclaimed node left broken. It is for teams who already run the CloudNativePG operator and want one chart for every database instead of hand-written manifests per cluster. It is published by [Neomanex](https://neomanex.com), an AI-native company, and it is the chart we run our own production PostgreSQL on.
 
 ```sh
-helm install my-postgres oci://ghcr.io/neomanexlabs/charts/cnpg-cluster --version 1.0.0 -f my-values.yaml
+helm install my-postgres oci://ghcr.io/neomanexlabs/charts/cnpg-cluster --version 1.1.0 -f my-values.yaml
 ```
 
 ## Add the repository
@@ -11,7 +11,7 @@ helm install my-postgres oci://ghcr.io/neomanexlabs/charts/cnpg-cluster --versio
 ```sh
 helm repo add neomanexlabs https://neomanexlabs.github.io/helm-charts
 helm repo update
-helm install my-postgres neomanexlabs/cnpg-cluster --version 1.0.0 -f my-values.yaml
+helm install my-postgres neomanexlabs/cnpg-cluster --version 1.1.0 -f my-values.yaml
 ```
 
 Both install paths serve the identical package.
@@ -53,7 +53,7 @@ The chart renders one CloudNativePG `Cluster` plus the optional resources you tu
 - **Spot-friendly defaults.** `failover.delay: 0` promotes a replica as soon as the primary is lost, `maintenance.reusePVC: true` lets an instance come back on its own volume after a node is reclaimed, and anti-affinity is `preferred` so a smaller node pool still schedules every instance. Set `affinity.tolerations` and `pooler.defaultTolerations` to the taint your spot nodes carry.
 - **Replica recovery.** A node reclaimed mid-write can leave a replica in CrashLoopBackOff on a damaged volume, and CloudNativePG keeps restarting it. With `replicaRecovery.enabled`, a CronJob finds replicas past `replicaRecovery.minRestarts` restarts, deletes the pod and its PVCs, and lets the operator rebuild the replica from the primary. It never touches the current primary. The same job deletes instance pods that are Pending, no longer declared by the cluster, and missing their PVC, because those can never schedule. Every run ends with a verdict and fails when the read-write Service has no endpoints, so a broken database shows up as a failed Job.
 - **Poolers.** Each entry in `pooler.instances` renders a PgBouncer `Pooler` of type `rw` or `ro`. Pooler pods take their resources, affinity, tolerations, node selector, priority class and topology spread from the `pooler.default*` values unless the entry overrides them. Pooler pods carry the chart version label, so any chart upgrade rolls them; PostgreSQL instance pods are not restarted by a chart upgrade.
-- **Backups.** `backup.*` configures the Barman object store on the cluster (WAL archiving plus base backups) and `scheduledBackup.*` renders the `ScheduledBackup`. GCS can authenticate through GKE Workload Identity (`backup.gcs.gkeEnvironment: true` plus the service account annotation), S3 and Azure through a secret the chart can create or one you name.
+- **Backups.** `backup.*` configures Barman WAL archiving plus base backups and `scheduledBackup.*` renders the `ScheduledBackup`. `backup.method: barmanObjectStore` (default) keeps the object store on the cluster; `backup.method: plugin` renders an `ObjectStore` for the [Barman Cloud Plugin](https://cloudnative-pg.io/plugin-barman-cloud/), which upstream recommends because the built-in integration is deprecated. GCS can authenticate through GKE Workload Identity (`backup.gcs.gkeEnvironment: true` plus the service account annotation), S3 and Azure through a secret the chart can create or one you name.
 
 ## Examples
 
@@ -103,6 +103,12 @@ The chart renders one CloudNativePG `Cluster` plus the optional resources you tu
 | backup.gcs.credentials | object | `{"key":"gcp-credentials.json"}` | Explicit credentials (if not using Workload Identity) |
 | backup.gcs.gkeEnvironment | bool | `false` | Authenticate with GKE Workload Identity instead of a credentials secret |
 | backup.gcs.path | string | `""` | Path within bucket (defaults to cluster name) |
+| backup.method | string | `"barmanObjectStore"` | How the cluster talks to the object store: barmanObjectStore (built into the operator, deprecated upstream) or plugin (Barman Cloud Plugin, which must be installed in the operator namespace). Switching an existing cluster triggers a rolling restart |
+| backup.plugin | object | `{"instanceSidecarConfiguration":{},"name":"barman-cloud.cloudnative-pg.io","objectStoreName":"","serverName":""}` | Barman Cloud Plugin settings, used when backup.method is plugin |
+| backup.plugin.instanceSidecarConfiguration | object | `{}` | Sidecar settings for every instance: resources, env, logLevel, retentionPolicyIntervalSeconds |
+| backup.plugin.name | string | `"barman-cloud.cloudnative-pg.io"` | Plugin name registered with the operator |
+| backup.plugin.objectStoreName | string | `""` | ObjectStore resource name (defaults to the cluster name) |
+| backup.plugin.serverName | string | `""` | Server name (folder) inside the object store (defaults to the cluster name) |
 | backup.provider | string | `""` | Backup provider: gcs, s3, or azure |
 | backup.retentionPolicy | string | `"30d"` | Retention policy (e.g., "30d", "7d") |
 | backup.s3 | object | `{"bucket":"","credentials":{"accessKeyId":"","secretAccessKey":""},"endpoint":"","path":"","region":""}` | S3 configuration |
