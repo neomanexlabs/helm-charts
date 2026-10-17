@@ -345,6 +345,20 @@ backup:
   # -- Enable backups
   enabled: false
 
+  # -- How the cluster talks to the object store: barmanObjectStore (built into the operator, deprecated upstream) or plugin (Barman Cloud Plugin, which must be installed in the operator namespace). Switching an existing cluster triggers a rolling restart
+  method: barmanObjectStore
+
+  # -- Barman Cloud Plugin settings, used when backup.method is plugin
+  plugin:
+    # -- Plugin name registered with the operator
+    name: barman-cloud.cloudnative-pg.io
+    # -- ObjectStore resource name (defaults to the cluster name)
+    objectStoreName: ""
+    # -- Server name (folder) inside the object store (defaults to the cluster name)
+    serverName: ""
+    # -- Sidecar settings for every instance: resources, env, logLevel, retentionPolicyIntervalSeconds
+    instanceSidecarConfiguration: {}
+
   # -- Backup provider: gcs, s3, or azure
   provider: ""
 

@@ -1,3 +1,16 @@
+## cnpg-cluster 1.1.0
+
+**What changed**
+
+- New `backup.method` value. `barmanObjectStore` (the default) keeps the object store on the `Cluster`, as before. `plugin` uses the [Barman Cloud Plugin](https://cloudnative-pg.io/plugin-barman-cloud/): the chart renders an `ObjectStore` (`barmancloud.cnpg.io/v1`) holding the destination, credentials, WAL and data settings and the retention policy, adds the plugin to `Cluster.spec.plugins` as WAL archiver, and renders the `ScheduledBackup` with `method: plugin`. Every `backup.gcs`, `backup.s3`, `backup.azure`, `backup.wal` and `backup.data` value applies to both methods.
+- New `backup.plugin` values: `name`, `objectStoreName` (defaults to the cluster name), `serverName` and `instanceSidecarConfiguration` (sidecar resources, env, log level, retention check interval).
+
+**Upgrading**
+
+No values changes. With `backup.method` left at its default the rendered manifests are identical to 1.0.0 apart from the chart label and one comment.
+
+To move an existing cluster to the plugin, install the plugin in the operator namespace first (it needs cert-manager), then set `backup.method: plugin` and upgrade. Keep the same bucket and path: the plugin reads and writes the same Barman archive, so earlier backups stay usable for recovery. The upgrade adds a sidecar to every instance, so the operator restarts the replicas one by one and then switches the primary over. Workload Identity keeps working because the sidecar runs under the instance service account. Metric names change from `cnpg_collector_*` to `barman_cloud_cloudnative_pg_io_*`; update dashboards and alerts that read the old names.
+
 ## cnpg-cluster 1.0.0
 
 First public release of the chart.

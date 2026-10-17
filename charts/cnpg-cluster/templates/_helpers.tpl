@@ -324,3 +324,106 @@ topologySpreadConstraints:
   {{- toYaml .Values.topologySpreadConstraints | nindent 2 }}
 {{- end }}
 {{- end }}
+
+{{/*
+Return the backup method: barmanObjectStore (built into the operator) or
+plugin (Barman Cloud Plugin). Anything else fails the render.
+*/}}
+{{- define "cnpg-cluster.backupMethod" -}}
+{{- $m := .Values.backup.method | default "barmanObjectStore" }}
+{{- if not (has $m (list "barmanObjectStore" "plugin")) }}
+{{- fail (printf "backup.method must be barmanObjectStore or plugin, got %q" $m) }}
+{{- end }}
+{{- $m }}
+{{- end }}
+
+{{/*
+Return the ObjectStore name used by the Barman Cloud Plugin.
+*/}}
+{{- define "cnpg-cluster.objectStoreName" -}}
+{{- .Values.backup.plugin.objectStoreName | default (include "cnpg-cluster.clusterName" .) }}
+{{- end }}
+
+{{/*
+Barman object store configuration (destination, credentials, WAL and data
+settings). Rendered under Cluster.spec.backup.barmanObjectStore for the
+built-in method and under ObjectStore.spec.configuration for the plugin.
+*/}}
+{{- define "cnpg-cluster.barmanConfiguration" -}}
+{{- if eq .Values.backup.provider "gcs" }}
+destinationPath: {{ include "cnpg-cluster.backupDestinationPath" . }}
+googleCredentials:
+  {{- if .Values.backup.gcs.gkeEnvironment }}
+  gkeEnvironment: true
+  {{- else }}
+  applicationCredentials:
+    name: {{ include "cnpg-cluster.backupSecretName" . }}
+    key: {{ .Values.backup.gcs.credentials.key | default "gcp-credentials.json" }}
+  {{- end }}
+wal:
+  compression: {{ .Values.backup.wal.compression | default "gzip" }}
+  {{- with .Values.backup.wal.maxParallel }}
+  maxParallel: {{ . }}
+  {{- end }}
+  {{- with .Values.backup.wal.encryption }}
+  encryption: {{ . }}
+  {{- end }}
+data:
+  compression: {{ .Values.backup.data.compression | default "gzip" }}
+  {{- with .Values.backup.data.encryption }}
+  encryption: {{ . }}
+  {{- end }}
+  {{- with .Values.backup.data.jobs }}
+  jobs: {{ . }}
+  {{- end }}
+
+{{- else if eq .Values.backup.provider "s3" }}
+destinationPath: {{ include "cnpg-cluster.backupDestinationPath" . }}
+{{- with .Values.backup.s3.endpoint }}
+endpointURL: {{ . }}
+{{- end }}
+s3Credentials:
+  accessKeyId:
+    name: {{ include "cnpg-cluster.backupSecretName" . }}
+    key: ACCESS_KEY_ID
+  secretAccessKey:
+    name: {{ include "cnpg-cluster.backupSecretName" . }}
+    key: ACCESS_SECRET_KEY
+  {{- with .Values.backup.s3.region }}
+  region:
+    name: {{ include "cnpg-cluster.backupSecretName" $ }}
+    key: AWS_REGION
+  {{- end }}
+wal:
+  compression: {{ .Values.backup.wal.compression | default "gzip" }}
+  {{- with .Values.backup.wal.maxParallel }}
+  maxParallel: {{ . }}
+  {{- end }}
+data:
+  compression: {{ .Values.backup.data.compression | default "gzip" }}
+  {{- with .Values.backup.data.jobs }}
+  jobs: {{ . }}
+  {{- end }}
+
+{{- else if eq .Values.backup.provider "azure" }}
+destinationPath: {{ include "cnpg-cluster.backupDestinationPath" . }}
+azureCredentials:
+  {{- if .Values.backup.azure.inheritFromAzureAD }}
+  inheritFromAzureAD: true
+  {{- else }}
+  connectionString:
+    name: {{ include "cnpg-cluster.backupSecretName" . }}
+    key: AZURE_CONNECTION_STRING
+  {{- end }}
+wal:
+  compression: {{ .Values.backup.wal.compression | default "gzip" }}
+  {{- with .Values.backup.wal.maxParallel }}
+  maxParallel: {{ . }}
+  {{- end }}
+data:
+  compression: {{ .Values.backup.data.compression | default "gzip" }}
+  {{- with .Values.backup.data.jobs }}
+  jobs: {{ . }}
+  {{- end }}
+{{- end }}
+{{- end }}

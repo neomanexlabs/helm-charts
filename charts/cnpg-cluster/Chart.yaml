@@ -3,7 +3,7 @@ name: cnpg-cluster
 description: Runs a CloudNativePG PostgreSQL cluster on Kubernetes, tuned to stay available on spot and preemptible nodes, with backups, PgBouncer pooling and automatic recovery of stuck replicas.
 
 type: application
-version: 1.0.0
+version: 1.1.0
 appVersion: "1.29.1"
 kubeVersion: ">=1.25.0-0"
 
@@ -34,17 +34,11 @@ annotations:
   artifacthub.io/prerelease: "false"
   artifacthub.io/changes: |
     - kind: added
-      description: First public release. Renders a CloudNativePG Cluster with optional PgBouncer poolers, scheduled backups to GCS, S3 or Azure, PodMonitors, NetworkPolicies and External Secrets Operator integration
+      description: backup.method plugin moves backups to the Barman Cloud Plugin. The chart renders an ObjectStore with the destination, credentials and retention, points the Cluster at it as WAL archiver, and switches the ScheduledBackup to the plugin method
     - kind: added
-      description: Optional replica recovery CronJob that rebuilds replicas stuck in CrashLoopBackOff, removes orphaned instance pods and fails loudly when the read-write service has no endpoints
-    - kind: fixed
-      description: An S3 backup with a region set no longer renders the s3Credentials key twice
-    - kind: fixed
-      description: A pooler entry without a pgbouncer block renders with the documented defaults instead of failing
-    - kind: fixed
-      description: Azure backups write to https://<storageAccount>.blob.core.windows.net/<container>/<path>, the address Barman accepts, instead of an azure:// path
+      description: backup.plugin values for the ObjectStore name, the server name and the instance sidecar configuration
     - kind: changed
-      description: Superuser access is off by default, and when it is on without a supplied secret the operator generates one instead of the cluster waiting for a secret that never appears
+      description: The default stays barmanObjectStore and renders the same Cluster as 1.0.0
   artifacthub.io/links: |
     - name: Website
       url: https://neomanex.com
